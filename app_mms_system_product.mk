@@ -1,4 +1,6 @@
+ifneq ($(TARGET_IS_QLMD), true)
 ifeq ($(TARGET_FWK_SUPPORTS_FULL_VALUEADDS),true)
 PRODUCT_PACKAGES += \
                  Mms
 endif#TARGET_FWK_SUPPORTS_FULL_VALUEADDS
+endif#TARGET_IS_QLMD
