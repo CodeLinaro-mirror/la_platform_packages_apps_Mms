@@ -413,12 +413,14 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
 
         ViewGroup v = (ViewGroup)LayoutInflater.from(this)
             .inflate(R.layout.conversation_list_actionbar, null);
-        actionBar.setDisplayOptions(ActionBar.DISPLAY_SHOW_CUSTOM,
-                ActionBar.DISPLAY_SHOW_CUSTOM);
-        actionBar.setCustomView(v,
-                new ActionBar.LayoutParams(ActionBar.LayoutParams.WRAP_CONTENT,
+        if (actionBar != null) {
+            actionBar.setDisplayOptions(ActionBar.DISPLAY_SHOW_CUSTOM,
+                    ActionBar.DISPLAY_SHOW_CUSTOM);
+            actionBar.setCustomView(v,
+                    new ActionBar.LayoutParams(ActionBar.LayoutParams.WRAP_CONTENT,
                         ActionBar.LayoutParams.WRAP_CONTENT,
                         Gravity.CENTER_VERTICAL | Gravity.END));
+        }
 
         mUnreadConvCount = (TextView)v.findViewById(R.id.unread_conv_count);
     }
