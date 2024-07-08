@@ -205,7 +205,7 @@ public class NotificationTransaction extends Transaction implements Runnable {
                             MessagingPreferenceActivity.getIsGroupMmsEnabled(mContext), null);
 
                     // Use local time instead of PDU time
-                    ContentValues values = new ContentValues(3);
+                    ContentValues values = new ContentValues(4);
                     values.put(Mms.DATE, System.currentTimeMillis() / 1000L);
                     Cursor c = mContext.getContentResolver().query(mUri,
                             null, null, null, null);
@@ -223,6 +223,9 @@ public class NotificationTransaction extends Transaction implements Runnable {
                     }
                     // Update Message Size for Original MMS.
                     values.put(Mms.MESSAGE_SIZE, mNotificationInd.getMessageSize());
+                    // Save content location of this mms, which is used to filter the
+                    // redundant MMS WAP PUSH message from network.
+                    values.put(Mms.CONTENT_LOCATION, mContentLocation);
                     SqliteWrapper.update(mContext, mContext.getContentResolver(),
                             uri, values, null, null);
 
