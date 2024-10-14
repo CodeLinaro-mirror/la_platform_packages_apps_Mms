@@ -22,7 +22,7 @@ android_app {
 
     libs: [
         "telephony-common",
-        "org.apache.http.legacy",
+        "org.apache.http.legacy.stubs",
         "telephony-ext",
     ],
     static_libs: [

@@ -18,8 +18,8 @@ android_test {
     // We only want this apk build for tests.
 
     libs: [
-        "android.test.runner",
-        "android.test.base",
+        "android.test.runner.stubs",
+        "android.test.base.stubs",
         "telephony-common",
     ],
 

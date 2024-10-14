@@ -17,7 +17,7 @@ android_test {
 
     // We only want this apk build for tests.
 
-    libs: ["android.test.runner"],
+    libs: ["android.test.runner.stubs.system"],
 
     // Include all test java files.
     srcs: ["src/**/*.java"],
