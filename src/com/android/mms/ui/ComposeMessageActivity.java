@@ -171,7 +171,6 @@ import android.widget.Toast;
 import android.widget.Toolbar;
 import android.widget.Button;
 
-import com.android.ex.chips.RecipientEditTextView;
 import com.android.mms.LogTag;
 import com.android.mms.MmsApp;
 import com.android.mms.MmsConfig;
@@ -2353,14 +2352,6 @@ public class ComposeMessageActivity extends Activity
 
         PhoneNumberFormatter.setPhoneNumberFormattingTextWatcher(this, mRecipientsEditor);
 
-        if (mRecipientsEditor != null) {
-            if (getResources().getConfiguration().orientation
-                    == Configuration.ORIENTATION_PORTRAIT) {
-                mRecipientsEditor.setOrientation(RecipientEditTextView.ScreenOrientation.PORTRAIT);
-            } else {
-                mRecipientsEditor.setOrientation(RecipientEditTextView.ScreenOrientation.LANDSCAPE);
-            }
-        }
         mTopPanel.setVisibility(View.VISIBLE);
         mToolBar.setVisibility(View.GONE);
     }
@@ -3037,15 +3028,6 @@ public class ComposeMessageActivity extends Activity
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-
-        if (mRecipientsEditor != null) {
-            if (getResources().getConfiguration().orientation
-                    == Configuration.ORIENTATION_PORTRAIT) {
-                mRecipientsEditor.setOrientation(RecipientEditTextView.ScreenOrientation.PORTRAIT);
-            } else {
-                mRecipientsEditor.setOrientation(RecipientEditTextView.ScreenOrientation.LANDSCAPE);
-            }
-        }
 
         if (resetConfiguration(newConfig)) {
             // Have to re-layout the attachment editor because we have different layouts
