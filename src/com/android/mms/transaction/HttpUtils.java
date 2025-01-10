@@ -218,8 +218,7 @@ public class HttpUtils {
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 SystemClock.elapsedRealtime() + HTTP_TIMEOUT, sAlarmIntent);
-        context.registerReceiver(sIntentReceiver, sIntentFilter);
-
+        context.registerReceiver(sIntentReceiver, sIntentFilter, Context.RECEIVER_EXPORTED);
     }
 
     private static synchronized void cancelTimeoutAlarm(Context context) {

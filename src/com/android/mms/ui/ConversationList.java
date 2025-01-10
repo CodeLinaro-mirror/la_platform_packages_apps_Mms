@@ -174,6 +174,7 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         if (MessageUtils.checkPermissionsIfNeeded(this)) {
             return;
         }

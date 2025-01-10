@@ -2360,6 +2360,7 @@ public class ComposeMessageActivity extends Activity
     protected void onCreate(Bundle savedInstanceState) {
         mIsSmsEnabled = MmsConfig.isSmsEnabled(this);
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         if (MessageUtils.checkPermissionsIfNeeded(this)) {
             return;
         }
@@ -2731,7 +2732,7 @@ public class ComposeMessageActivity extends Activity
         }
 
         // Register a BroadcastReceiver to listen on HTTP I/O process.
-        registerReceiver(mHttpProgressReceiver, mHttpProgressFilter);
+        registerReceiver(mHttpProgressReceiver, mHttpProgressFilter, Context.RECEIVER_NOT_EXPORTED);
 
         // Register a BroadcastReceiver to listen on SD card state.
         registerReceiver(mMediaStateReceiver, getMediaStateFilter());

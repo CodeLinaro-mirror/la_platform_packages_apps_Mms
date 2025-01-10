@@ -90,6 +90,7 @@ public class SearchConversationActivity extends Activity implements View.OnClick
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         setContentView(R.layout.search_conversation_screen);
         initViews();
     }

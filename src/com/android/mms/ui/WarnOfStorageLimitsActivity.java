@@ -54,6 +54,7 @@ public class WarnOfStorageLimitsActivity extends Activity implements DialogInter
         this.setTheme(com.android.internal.R.style.Theme_Dialog_Alert);
 
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         if (MessageUtils.checkPermissionsIfNeeded(this)) {
             return;
         }

@@ -61,6 +61,7 @@ public class MessagingExpiryPreferenceActivity extends PreferenceActivity {
     private String mMsgType = null;
     protected void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        MessageUtils.setupEdgeToEdge(this);
         Intent intent = getIntent();
         Bundle bundle = intent.getExtras();
         mMsgType = bundle.getString(MSG_TYPE);

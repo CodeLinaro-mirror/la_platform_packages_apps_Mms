@@ -258,7 +258,8 @@ public class MessagingNotification {
         intentFilter.addAction(NOTIFICATION_DELETED_ACTION);
 
         // TODO: should we unregister when the app gets killed?
-        context.registerReceiver(sNotificationDeletedReceiver, intentFilter);
+        context.registerReceiver(sNotificationDeletedReceiver, intentFilter,
+                Context.RECEIVER_EXPORTED);
         sPduPersister = PduPersister.getPduPersister(context);
 
         // initialize the notification deleted action

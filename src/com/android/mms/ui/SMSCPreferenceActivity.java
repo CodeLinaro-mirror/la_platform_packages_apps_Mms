@@ -99,6 +99,7 @@ public class SMSCPreferenceActivity extends PreferenceActivity {
 
     protected void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        MessageUtils.setupEdgeToEdge(this);
         mHandler = new SmscHandler(this);
         createResource();
         ActionBar actionBar = getActionBar();
