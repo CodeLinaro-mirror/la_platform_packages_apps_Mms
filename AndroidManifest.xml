@@ -72,11 +72,6 @@
 
     <uses-permission android:name="android.permission.START_ACTIVITIES_FROM_BACKGROUND"/>
 
-    <overlay
-        android:targetPackage="com.android.mms"
-        android:requiredSystemPropertyName="ro.boot.vendor.qspa.modem"
-        android:requiredSystemPropertyValue="enabled"/>
-
     <application android:name="MmsApp"
             android:label="@string/app_label"
             android:icon="@mipmap/ic_launcher_smsmms"

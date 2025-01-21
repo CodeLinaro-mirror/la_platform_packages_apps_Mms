@@ -21,7 +21,9 @@ import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.PowerManager;
+import android.os.SystemProperties;
 import android.provider.Telephony.Sms.Intents;
 import android.util.Log;
 
@@ -32,6 +34,9 @@ import com.android.mms.ui.MessageUtils;
  * Handle incoming SMSes.  Just dispatches the work off to a Service.
  */
 public class SmsReceiver extends BroadcastReceiver {
+    private static final String PROP_VALUE_ENABLED = "enabled";
+    private static final String PROP_KEY_QPSA_MODEM = "ro.boot.vendor.qspa.modem";
+
     static final Object mStartingServiceSync = new Object();
     static PowerManager.WakeLock mStartingService;
     private static SmsReceiver sInstance;
@@ -45,6 +50,16 @@ public class SmsReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        String action = intent.getAction();
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+            String isModemEnabled = SystemProperties.get(PROP_KEY_QPSA_MODEM, PROP_VALUE_ENABLED);
+            LogTag.debugD("isModemEnabled = " + isModemEnabled);
+            if (!PROP_VALUE_ENABLED.equalsIgnoreCase(isModemEnabled)) {
+                context.getPackageManager().setApplicationEnabledSetting(context.getPackageName(),
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED, 0);
+                return;
+            }
+        }
         onReceiveWithPrivilege(context, intent, false);
     }
 
