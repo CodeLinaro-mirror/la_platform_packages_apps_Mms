@@ -241,8 +241,6 @@ public class SMSCPreferenceActivity extends PreferenceActivity {
                 mActivity = (SMSCPreferenceActivity) getActivity();
             }
 
-            final String actualSMSC = mActivity.adjustSMSC(displayedSMSC);
-
             return new AlertDialog.Builder(mActivity)
                     .setIcon(android.R.drawable.ic_dialog_alert)
                     .setMessage(R.string.set_smsc_confirm_message)
@@ -267,20 +265,15 @@ public class SMSCPreferenceActivity extends PreferenceActivity {
                                                 .obtainMessage(EVENT_SET_SMSC_DONE);
                                         userParams.putString(
                                                 MessageUtils.EXTRA_SMSC,
-                                                actualSMSC);
+                                                displayedSMSC);
                                         callback.obj = userParams;
                                         MessageUtils.setSmscForSub(mActivity,
-                                                sub, actualSMSC, callback);
+                                                sub, displayedSMSC, callback);
                                     }
                                 }
                             }).setNegativeButton(android.R.string.cancel, null)
                     .setCancelable(true).create();
         }
-    }
-
-    private String adjustSMSC(String smsc) {
-        String actualSMSC = "\"" + smsc + "\"";
-        return actualSMSC;
     }
 
     public static class MyEditDialogFragment extends DialogFragment {
