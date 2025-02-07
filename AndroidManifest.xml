@@ -25,7 +25,7 @@
         package="com.android.mms">
 
     <original-package android:name="com.android.mms" />
-    <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="33"/>
+    <uses-sdk android:minSdkVersion="23" />
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
@@ -67,13 +67,10 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <uses-permission android:name="android.permission.START_ACTIVITIES_FROM_BACKGROUND"/>
-
-    <overlay
-        android:targetPackage="com.android.mms"
-        android:requiredSystemPropertyName="ro.boot.vendor.qspa.modem"
-        android:requiredSystemPropertyValue="enabled"/>
 
     <application android:name="MmsApp"
             android:label="@string/app_label"

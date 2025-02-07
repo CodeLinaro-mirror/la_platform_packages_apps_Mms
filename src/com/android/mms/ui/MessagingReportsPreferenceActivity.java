@@ -59,6 +59,7 @@ public class MessagingReportsPreferenceActivity extends PreferenceActivity {
 
     protected void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        MessageUtils.setupEdgeToEdge(this);
         Intent intent = getIntent();
         Bundle bundler = intent.getExtras();
         mMsgType = bundler.getString(MSG_TYPE);

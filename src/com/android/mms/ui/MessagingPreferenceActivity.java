@@ -266,6 +266,7 @@ public class MessagingPreferenceActivity extends PreferenceActivity
     @Override
     protected void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        MessageUtils.setupEdgeToEdge(this);
         if (MessageUtils.checkPermissionsIfNeeded(this)) {
             return;
         }
@@ -1220,8 +1221,6 @@ public class MessagingPreferenceActivity extends PreferenceActivity
                 mActivity = (MessagingPreferenceActivity) getActivity();
             }
 
-            final String actualSMSC = mActivity.adjustSMSC(displayedSMSC);
-
             return new AlertDialog.Builder(mActivity)
                     .setIcon(android.R.drawable.ic_dialog_alert).setMessage(
                             R.string.set_smsc_confirm_message)
@@ -1237,9 +1236,9 @@ public class MessagingPreferenceActivity extends PreferenceActivity
                                putSmscIntoPref(mActivity,sub,displayedSMSC,callbackMessage);
                            } else {
                                final Message callback = mHandler.obtainMessage(EVENT_SET_SMSC_DONE);
-                               userParams.putString(MessageUtils.EXTRA_SMSC,actualSMSC);
+                               userParams.putString(MessageUtils.EXTRA_SMSC,displayedSMSC);
                                callback.obj = userParams;
-                               MessageUtils.setSmscForSub(mActivity, sub, actualSMSC, callback);
+                               MessageUtils.setSmscForSub(mActivity, sub, displayedSMSC, callback);
                            }
                         }
                     })
@@ -1247,11 +1246,6 @@ public class MessagingPreferenceActivity extends PreferenceActivity
                     .setCancelable(true)
                     .create();
         }
-    }
-
-    private String adjustSMSC(String smsc) {
-        String actualSMSC = "\"" + smsc + "\"";
-        return actualSMSC;
     }
 
     // For the group mms feature to be enabled, the following must be true:

@@ -118,6 +118,7 @@ public class MultiPickContactGroups extends ListActivity implements
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         if (MessageUtils.checkPermissionsIfNeeded(this)) {
             return;
         }

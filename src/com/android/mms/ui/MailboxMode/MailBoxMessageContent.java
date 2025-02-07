@@ -181,6 +181,7 @@ public class MailBoxMessageContent extends Activity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         if (MessageUtils.checkPermissionsIfNeeded(this)) {
             return;
         }

@@ -70,6 +70,7 @@ public class PermissionGuardActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         // TODO Auto-generated method stub
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         mExtPermissions = getIntent().getExtras().getStringArray(EXT_PERMISSIONS);
         mOriginalIntent = (Intent) getIntent().getExtras().get(ORIGINAL_INTENT);
         mGrantPermission = ((mOriginalIntent.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0);

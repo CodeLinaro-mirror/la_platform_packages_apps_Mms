@@ -47,6 +47,7 @@ public class SelectableCopyActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        MessageUtils.setupEdgeToEdge(this);
         setContentView(R.layout.sms_full_screen);
 
         CharSequence text = null;

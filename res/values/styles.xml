@@ -25,6 +25,7 @@
     </style>
 
     <style name="MmsHoloTheme" parent="@android:style/Theme.Holo.Light.DarkActionBar">
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <style name="WidgetTitle" parent="@android:style/TextAppearance.Holo.Widget.ActionBar.Title">
@@ -66,6 +67,7 @@
     </style>
 
     <style name="MmsMaterialHoloTheme" parent="@android:style/Theme.Material.Light.DarkActionBar">
+        <item name="android:windowLightStatusBar">true</item>
     </style>
     <style name="MmsNewStyleTheme" parent="@android:style/Theme.Material.Light.DarkActionBar">
        <item name="android:actionMenuTextAppearance">
@@ -157,6 +159,7 @@
         <item name="android:actionModeCloseDrawable">@drawable/back_black</item>
         <item name="android:actionModeBackground">@color/action_mode_background</item>
         <item name="android:actionButtonStyle">@style/MyActionButton</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <style name="QuickReplyTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">

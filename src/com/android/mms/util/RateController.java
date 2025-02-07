@@ -128,7 +128,7 @@ public class RateController {
         sMutexLock = true;
 
         mContext.registerReceiver(mBroadcastReceiver,
-                new IntentFilter(RATE_LIMIT_CONFIRMED_ACTION));
+                new IntentFilter(RATE_LIMIT_CONFIRMED_ACTION), Context.RECEIVER_NOT_EXPORTED);
 
         mAnswer = NO_ANSWER;
         try {
@@ -136,6 +136,7 @@ public class RateController {
             // Using NEW_TASK here is necessary because we're calling
             // startActivity from outside an activity.
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.setPackage(mContext.getPackageName());
             mContext.startActivity(intent);
             return waitForAnswer() == ANSWER_YES;
         } finally {

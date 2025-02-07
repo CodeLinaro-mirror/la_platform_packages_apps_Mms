@@ -52,6 +52,7 @@ public class ManageSimSMSPreferenceActivity extends PreferenceActivity {
 
     protected void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        MessageUtils.setupEdgeToEdge(this);
         createResource();
         ActionBar actionBar = getActionBar();
         actionBar.setDisplayOptions(ActionBar.DISPLAY_SHOW_TITLE
