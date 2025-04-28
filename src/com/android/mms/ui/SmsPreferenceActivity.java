@@ -693,12 +693,14 @@ public class SmsPreferenceActivity extends PreferenceActivity {
                                     } else {
                                         final Message callback = mHandler
                                                 .obtainMessage(EVENT_SET_SMSC_DONE);
+                                        String adjustedSMSC = MessageUtils.adjustSMSC(
+                                                displayedSMSC);
                                         userParams.putString(
                                                 MessageUtils.EXTRA_SMSC,
-                                                displayedSMSC);
+                                                adjustedSMSC);
                                         callback.obj = userParams;
                                         MessageUtils.setSmscForSub(mActivity,
-                                                sub, displayedSMSC, callback);
+                                                sub, adjustedSMSC, callback);
                                     }
                                 }
                             }).setNegativeButton(android.R.string.cancel, null)
