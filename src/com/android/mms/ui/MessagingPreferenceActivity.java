@@ -1236,9 +1236,10 @@ public class MessagingPreferenceActivity extends PreferenceActivity
                                putSmscIntoPref(mActivity,sub,displayedSMSC,callbackMessage);
                            } else {
                                final Message callback = mHandler.obtainMessage(EVENT_SET_SMSC_DONE);
-                               userParams.putString(MessageUtils.EXTRA_SMSC,displayedSMSC);
+                               String adjustedSMSC = MessageUtils.adjustSMSC(displayedSMSC);
+                               userParams.putString(MessageUtils.EXTRA_SMSC, adjustedSMSC);
                                callback.obj = userParams;
-                               MessageUtils.setSmscForSub(mActivity, sub, displayedSMSC, callback);
+                               MessageUtils.setSmscForSub(mActivity, sub, adjustedSMSC, callback);
                            }
                         }
                     })

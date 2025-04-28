@@ -78,6 +78,7 @@ import android.net.NetworkInfo;
 import android.net.NetworkInfo.State;
 import android.net.wifi.WifiManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Bundle;
@@ -86,6 +87,7 @@ import android.os.Messenger;
 import android.os.Parcelable;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.os.StatFs;
 import android.preference.PreferenceManager;
 import android.provider.ContactsContract;
@@ -446,6 +448,8 @@ public class MessageUtils {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
     };
+
+    private static String PROP_PRODUCT_FIRST_API_LEVEL = "ro.product.first_api_level";
 
     private MessageUtils() {
         // Forbidden being instantiated.
@@ -3763,6 +3767,21 @@ public class MessageUtils {
                     // passed down to descendant views.
                     return WindowInsetsCompat.CONSUMED;
                 });
+    }
+
+    /**
+     * Adjust the original smsc according to product first api level
+     *
+     * @param originalSMSC the original SMSC number
+     */
+    public static String adjustSMSC(String originalSMSC) {
+        int firstAPILevel = SystemProperties.getInt(PROP_PRODUCT_FIRST_API_LEVEL, 0);
+        if (firstAPILevel >= Build.VERSION_CODES.BAKLAVA) {
+            return originalSMSC;
+        } else {
+            String adjustedSMSC = "\"" + originalSMSC + "\"";
+            return adjustedSMSC;
+        }
     }
 
 }
