@@ -1172,7 +1172,7 @@
     <string name="notification_reply_to">Reply to <xliff:g id="name">%s</xliff:g></string>
     <string name="notification_view_message_text">View Message</string>
 
-    <string name="conversation_list_send_fail_text">Not sent, touch to try again</string>
+    <string name="conversation_list_send_fail_text">Send failed, touch to try again</string>
     <string name="conversation_transaction_fail">Transaction fail, touch to try again</string>
 
     <!-- Abbreviated message to express that something occurred some number of minutes in the past (e.g., 5 minutes ago). -->
