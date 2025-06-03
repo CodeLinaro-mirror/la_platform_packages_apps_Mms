@@ -5696,6 +5696,12 @@ public class ComposeMessageActivity extends Activity
                     // continue to send message
                     Log.e(TAG, "Cannot find EmergencyCallbackModeExitDialog", e);
                 }
+            } else {
+                if (SubscriptionManagerWrapper.INVALID_SUBSCRIPTION_ID == subId) {
+                    int defaultSmsSub = SubscriptionManager.getDefaultSmsSubscriptionId();
+                    Log.d(TAG, "sendMessage: non ecm/scm mode, defaultSmsSub = " + defaultSmsSub);
+                    mWorkingMessage.setWorkingMessageSub(defaultSmsSub);
+                }
             }
         }
 
