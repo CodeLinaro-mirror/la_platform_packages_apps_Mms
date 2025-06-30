@@ -19,6 +19,7 @@
 
 package com.android.mms.ui;
 
+import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
 import static android.content.res.Configuration.KEYBOARDHIDDEN_NO;
 import static com.android.mms.transaction.ProgressCallbackEntity.PROGRESS_ABORT;
 import static com.android.mms.transaction.ProgressCallbackEntity.PROGRESS_COMPLETE;
@@ -121,6 +122,7 @@ import android.provider.Settings.SettingNotFoundException;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.Sms;
 import android.provider.Telephony.Sms.Conversations;
+import android.window.OnBackInvokedCallback;
 import androidx.viewpager.widget.ViewPager;
 import androidx.viewpager.widget.ViewPager.OnPageChangeListener;
 import android.telephony.CarrierConfigManager;
@@ -575,6 +577,10 @@ public class ComposeMessageActivity extends Activity
     private boolean mIsEnableSelectCopy = false;
     private int mAccentColor = 0;
     private int mStatusBarColor = 0;
+
+    private final OnBackInvokedCallback mOnBackInvokedCallback = () -> {
+        handleBackPressed();
+    };
 
     private final IntentFilter mAirplaneModeFilter = new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED);
     private final IntentFilter mSIMStatusChangeFilter = new IntentFilter(SIM_STATE_CHANGE_ACTION);
@@ -2407,6 +2413,9 @@ public class ComposeMessageActivity extends Activity
             };
         }
 
+        getOnBackInvokedDispatcher()
+                .registerOnBackInvokedCallback(PRIORITY_DEFAULT, mOnBackInvokedCallback);
+
         if (TRACE) {
             android.os.Debug.startMethodTracing("compose");
         }
@@ -3023,6 +3032,7 @@ public class ComposeMessageActivity extends Activity
         }
         super.onDestroy();
 
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(mOnBackInvokedCallback);
         mMMSAudioPlayer.releaseMediaPlayer();
     }
 
@@ -3132,18 +3142,6 @@ public class ComposeMessageActivity extends Activity
                     return true;
                 }
                 break;
-            case KeyEvent.KEYCODE_BACK:
-                if (mAttachmentSelector.getVisibility() == View.VISIBLE) {
-                    mAttachmentSelector.setVisibility(View.GONE);
-                } else {
-                    exitComposeMessageActivity(new Runnable() {
-                        @Override
-                        public void run() {
-                            finish();
-                        }
-                    });
-                }
-                return true;
         }
 
         return super.onKeyDown(keyCode, event);
@@ -7698,5 +7696,19 @@ public class ComposeMessageActivity extends Activity
             }
         }
         return false;
+    }
+
+    private void handleBackPressed() {
+        Log.d(TAG, "ComposeMessageActivity: handleBackPressed: enter");
+        if (mAttachmentSelector.getVisibility() == View.VISIBLE) {
+            mAttachmentSelector.setVisibility(View.GONE);
+        } else {
+            exitComposeMessageActivity(new Runnable() {
+                @Override
+                public void run() {
+                    finish();
+                }
+            });
+        }
     }
 }

@@ -19,6 +19,8 @@
 
 package com.android.mms.ui;
 
+import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
+
 import android.app.ActionBar;
 import android.app.AlertDialog;
 import android.app.ListActivity;
@@ -75,6 +77,7 @@ import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedCallback;
 
 import com.android.mms.LogTag;
 import com.android.mms.MmsConfig;
@@ -170,6 +173,9 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
     private TextView mNotificationLabel;
     private TextView mNotificationDate;
     private TextView mNotificationSubject;
+    private final OnBackInvokedCallback mOnBackInvokedCallback = () -> {
+        handleBackPressed();
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -244,6 +250,9 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
         } catch (Settings.SettingNotFoundException e) {
             Log.w(TAG, "SettingNotFoundException wfc");
         }
+
+        getOnBackInvokedDispatcher()
+                .registerOnBackInvokedCallback(PRIORITY_DEFAULT, mOnBackInvokedCallback);
     }
 
     private void checkNotificationPermission() {
@@ -605,6 +614,7 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(mOnBackInvokedCallback);
         if (mListAdapter != null) {
             mListAdapter.changeCursor(null);
         }
@@ -1487,6 +1497,11 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
             getListView().setItemChecked(i, false);
         }
         mListAdapter.notifyDataSetChanged();
+    }
+
+    private void handleBackPressed() {
+        Log.d(TAG, "ConversationList: handleBackPressed: call finish");
+        finish();
     }
 
     private class ModeCallback implements ListView.MultiChoiceModeListener {
