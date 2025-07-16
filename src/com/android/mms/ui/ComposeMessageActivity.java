@@ -19,6 +19,7 @@
 
 package com.android.mms.ui;
 
+import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
 import static android.content.res.Configuration.KEYBOARDHIDDEN_NO;
 import static com.android.mms.transaction.ProgressCallbackEntity.PROGRESS_ABORT;
 import static com.android.mms.transaction.ProgressCallbackEntity.PROGRESS_COMPLETE;
@@ -121,6 +122,7 @@ import android.provider.Settings.SettingNotFoundException;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.Sms;
 import android.provider.Telephony.Sms.Conversations;
+import android.window.OnBackInvokedCallback;
 import androidx.viewpager.widget.ViewPager;
 import androidx.viewpager.widget.ViewPager.OnPageChangeListener;
 import android.telephony.CarrierConfigManager;
@@ -261,6 +263,8 @@ public class ComposeMessageActivity extends Activity
     private static final boolean TRACE = false;
     private static final boolean LOCAL_LOGV = false;
     private static final boolean DEBUG_MULTI_CHOICE = true;
+
+    private static final String PROP_KEY_DSDS_to_SS = "persist.vendor.radio.dsds_to_ss";
 
     // Menu ID
     private static final int MENU_ADD_SUBJECT           = 0;
@@ -575,6 +579,10 @@ public class ComposeMessageActivity extends Activity
     private boolean mIsEnableSelectCopy = false;
     private int mAccentColor = 0;
     private int mStatusBarColor = 0;
+
+    private final OnBackInvokedCallback mOnBackInvokedCallback = () -> {
+        handleBackPressed();
+    };
 
     private final IntentFilter mAirplaneModeFilter = new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED);
     private final IntentFilter mSIMStatusChangeFilter = new IntentFilter(SIM_STATE_CHANGE_ACTION);
@@ -2407,6 +2415,9 @@ public class ComposeMessageActivity extends Activity
             };
         }
 
+        getOnBackInvokedDispatcher()
+                .registerOnBackInvokedCallback(PRIORITY_DEFAULT, mOnBackInvokedCallback);
+
         if (TRACE) {
             android.os.Debug.startMethodTracing("compose");
         }
@@ -3023,6 +3034,7 @@ public class ComposeMessageActivity extends Activity
         }
         super.onDestroy();
 
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(mOnBackInvokedCallback);
         mMMSAudioPlayer.releaseMediaPlayer();
     }
 
@@ -3132,18 +3144,6 @@ public class ComposeMessageActivity extends Activity
                     return true;
                 }
                 break;
-            case KeyEvent.KEYCODE_BACK:
-                if (mAttachmentSelector.getVisibility() == View.VISIBLE) {
-                    mAttachmentSelector.setVisibility(View.GONE);
-                } else {
-                    exitComposeMessageActivity(new Runnable() {
-                        @Override
-                        public void run() {
-                            finish();
-                        }
-                    });
-                }
-                return true;
         }
 
         return super.onKeyDown(keyCode, event);
@@ -5664,8 +5664,21 @@ public class ComposeMessageActivity extends Activity
             return;
         }
 
-        // Check MMS APN config, prompt one dialog if missing MMS APN or its config incorrect
         int subId = mWorkingMessage.getWorkingMessageSub();
+        if (SystemProperties.getBoolean(PROP_KEY_DSDS_to_SS, false)) {
+            final SubscriptionManager subscriptionManager = (SubscriptionManager) getContext()
+                    .getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+            if (SubscriptionManagerWrapper.INVALID_SUBSCRIPTION_ID == subId
+                    || !subscriptionManager.isActiveSubscriptionId(subId)) {
+                int defaultSmsSub = SubscriptionManager.getDefaultSmsSubscriptionId();
+                Log.d(TAG, "sendMessage: use defaultSmsSub = " + defaultSmsSub
+                        + " to replace subId" + subId);
+                mWorkingMessage.setWorkingMessageSub(defaultSmsSub);
+                subId = defaultSmsSub;
+            }
+        }
+
+        // Check MMS APN config, prompt one dialog if missing MMS APN or its config incorrect
         if (mWorkingMessage.requiresMms() && !hasValidMmsApnConfiguration(subId)) {
             LogTag.debugD("sendMessage: Miss MMS APN or no valid MMS APN configuration");
             showMmsNotSupportedDialog();
@@ -7698,5 +7711,19 @@ public class ComposeMessageActivity extends Activity
             }
         }
         return false;
+    }
+
+    private void handleBackPressed() {
+        Log.d(TAG, "ComposeMessageActivity: handleBackPressed: enter");
+        if (mAttachmentSelector.getVisibility() == View.VISIBLE) {
+            mAttachmentSelector.setVisibility(View.GONE);
+        } else {
+            exitComposeMessageActivity(new Runnable() {
+                @Override
+                public void run() {
+                    finish();
+                }
+            });
+        }
     }
 }
