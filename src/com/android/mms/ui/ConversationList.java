@@ -19,7 +19,7 @@
 
 package com.android.mms.ui;
 
-import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
+import static android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY;
 
 import android.app.ActionBar;
 import android.app.AlertDialog;
@@ -252,7 +252,7 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
         }
 
         getOnBackInvokedDispatcher()
-                .registerOnBackInvokedCallback(PRIORITY_DEFAULT, mOnBackInvokedCallback);
+                .registerOnBackInvokedCallback(PRIORITY_OVERLAY, mOnBackInvokedCallback);
     }
 
     private void checkNotificationPermission() {
@@ -1500,6 +1500,10 @@ public class ConversationList extends ListActivity implements DraftCache.OnDraft
     }
 
     private void handleBackPressed() {
+        if (MessageUtils.hideKeyboardIfVisible(this)) {
+            return;
+        }
+
         Log.d(TAG, "ConversationList: handleBackPressed: call finish");
         finish();
     }

@@ -29,7 +29,7 @@
 
 package com.android.mms.ui;
 
-import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
+import static android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -191,7 +191,7 @@ public class PlayVideoOrPicActivity extends Activity {
         }
 
         getOnBackInvokedDispatcher()
-                .registerOnBackInvokedCallback(PRIORITY_DEFAULT, mOnBackInvokedCallback);
+                .registerOnBackInvokedCallback(PRIORITY_OVERLAY, mOnBackInvokedCallback);
     }
 
     @Override
@@ -230,7 +230,10 @@ public class PlayVideoOrPicActivity extends Activity {
     }
 
     private void handleBackPressed() {
-        Log.d(TAG, "PlayVideoOrPicActivity: handleBackPressed: enter");
+        if (MessageUtils.hideKeyboardIfVisible(this)) {
+            return;
+        }
+
         if (mFullScreen) {
             setImmersiveMode(false);
         } else {
