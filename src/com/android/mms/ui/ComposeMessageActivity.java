@@ -19,7 +19,7 @@
 
 package com.android.mms.ui;
 
-import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
+import static android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY;
 import static android.content.res.Configuration.KEYBOARDHIDDEN_NO;
 import static com.android.mms.transaction.ProgressCallbackEntity.PROGRESS_ABORT;
 import static com.android.mms.transaction.ProgressCallbackEntity.PROGRESS_COMPLETE;
@@ -2416,7 +2416,7 @@ public class ComposeMessageActivity extends Activity
         }
 
         getOnBackInvokedDispatcher()
-                .registerOnBackInvokedCallback(PRIORITY_DEFAULT, mOnBackInvokedCallback);
+                .registerOnBackInvokedCallback(PRIORITY_OVERLAY, mOnBackInvokedCallback);
 
         if (TRACE) {
             android.os.Debug.startMethodTracing("compose");
@@ -7714,10 +7714,15 @@ public class ComposeMessageActivity extends Activity
     }
 
     private void handleBackPressed() {
-        Log.d(TAG, "ComposeMessageActivity: handleBackPressed: enter");
+        if (MessageUtils.hideKeyboardIfVisible(this)) {
+            return;
+        }
+
         if (mAttachmentSelector.getVisibility() == View.VISIBLE) {
+            Log.d(TAG, "ComposeMessageActivity: handleBackPressed: hide attachment selector");
             mAttachmentSelector.setVisibility(View.GONE);
         } else {
+            Log.d(TAG, "ComposeMessageActivity: handleBackPressed: exit this activity");
             exitComposeMessageActivity(new Runnable() {
                 @Override
                 public void run() {
