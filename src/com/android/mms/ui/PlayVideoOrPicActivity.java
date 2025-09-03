@@ -29,6 +29,8 @@
 
 package com.android.mms.ui;
 
+import static android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT;
+
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
@@ -49,6 +51,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
+import android.window.OnBackInvokedCallback;
 
 import com.android.mms.LogTag;
 import com.android.mms.R;
@@ -93,6 +96,9 @@ public class PlayVideoOrPicActivity extends Activity {
     private int mLastSystemUiVis;
     private View mRootView;
     private boolean mFullScreen = false;
+    private final OnBackInvokedCallback mOnBackInvokedCallback = () -> {
+        handleBackPressed();
+    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -183,6 +189,9 @@ public class PlayVideoOrPicActivity extends Activity {
                 finish();
                 break;
         }
+
+        getOnBackInvokedDispatcher()
+                .registerOnBackInvokedCallback(PRIORITY_DEFAULT, mOnBackInvokedCallback);
     }
 
     @Override
@@ -192,6 +201,12 @@ public class PlayVideoOrPicActivity extends Activity {
             mHasVideoPaused = false;
             mVideo.seekTo(mVideoPosition);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(mOnBackInvokedCallback);
     }
 
     private void setImmersiveMode(boolean enable) {
@@ -214,12 +229,12 @@ public class PlayVideoOrPicActivity extends Activity {
         mFullScreen = enable;
     }
 
-    @Override
-    public void onBackPressed() {
+    private void handleBackPressed() {
+        Log.d(TAG, "PlayVideoOrPicActivity: handleBackPressed: enter");
         if (mFullScreen) {
             setImmersiveMode(false);
         } else {
-            super.onBackPressed();
+            finish();
         }
     }
 
