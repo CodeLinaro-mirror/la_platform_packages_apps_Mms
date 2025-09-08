@@ -119,6 +119,8 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -3782,6 +3784,26 @@ public class MessageUtils {
             String adjustedSMSC = "\"" + originalSMSC + "\"";
             return adjustedSMSC;
         }
+    }
+
+    public static boolean hideKeyboardIfVisible(Activity activity) {
+        if (activity == null) {
+            return false;
+        }
+        final WindowInsets rootWindowInsets = activity.getWindow().getDecorView()
+                .getRootWindowInsets();
+        if (rootWindowInsets != null && rootWindowInsets.isVisible(WindowInsets.Type.ime())) {
+            final InputMethodManager imm = (InputMethodManager) activity.getSystemService(
+                    Context.INPUT_METHOD_SERVICE);
+            final View currentFocus = activity.getCurrentFocus();
+            if (imm != null && currentFocus != null) {
+                Log.d(TAG, activity.getClass().getSimpleName()
+                        + ": hideKeyboardIfVisible: hiding IME");
+                imm.hideSoftInputFromWindow(currentFocus.getWindowToken(), 0);
+                return true;
+            }
+        }
+        return false;
     }
 
 }
