@@ -1187,6 +1187,7 @@
     <string name="exit">Exit</string>
     <string name="enable_permission_settings">You need enable permissions in Settings > Apps > Messaging > Permissions.</string>
     <string name="no_permission_save_attachment_to_storage">No permission save attachment to external storage</string>
+    <string name="bluetooth_permission_denied">No permission to get nearby devices</string>
     <string name="grant_permission_fail">Get permission fail, please try again!</string>
     <string name="you">You:</string>
     <string name="email_app_not_found">Can not find Email application</string>

@@ -61,7 +61,12 @@ import android.app.ActionBar;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.PendingIntent;
 import android.app.ProgressDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothMapClient;
+import android.bluetooth.BluetoothProfile;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
@@ -76,6 +81,7 @@ import android.content.DialogInterface.OnClickListener;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.ServiceConnection;
@@ -130,6 +136,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.telephony.TelephonyManager;
+import android.telecom.PhoneAccount;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
 import android.text.Editable;
@@ -216,6 +223,8 @@ import com.google.android.mms.pdu.PduPersister;
 import com.google.android.mms.pdu.SendReq;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.regex.Matcher;
 
 import org.codeaurora.presenceserv.IPresenceService;
@@ -369,6 +378,7 @@ public class ComposeMessageActivity extends Activity
     private static final int DEFAULT_ATTACHMENT_PAGER = 0;
 
     private static final int SAVE_ATTACHMENT_PERMISSION_REQUEST_CODE = 2016;
+    private static final int BLUETOOTH_PERMISSION_REQUEST_CODE = 2017;
 
     private ContentResolver mContentResolver;
 
@@ -576,6 +586,8 @@ public class ComposeMessageActivity extends Activity
     private boolean mIsEnableSelectCopy = false;
     private int mAccentColor = 0;
     private int mStatusBarColor = 0;
+    private BluetoothDevice mMapConnectedDevice = null;
+    private BluetoothMapClient mMapProfile = null;
 
     private final IntentFilter mAirplaneModeFilter = new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED);
     private final IntentFilter mSIMStatusChangeFilter = new IntentFilter(SIM_STATE_CHANGE_ACTION);
@@ -2393,6 +2405,10 @@ public class ComposeMessageActivity extends Activity
 
         initialize(savedInstanceState, 0);
 
+        // Request Nearby device permission if not prsent
+        // TODO : whitelist permission at compiletime
+        initializeBluetoothMapClient();
+
         mEnablePresence = this.getResources().getBoolean(
                 R.bool.config_regional_presence_enable);
         if (mEnablePresence) {
@@ -3031,6 +3047,16 @@ public class ComposeMessageActivity extends Activity
         }
         super.onDestroy();
 
+        if (mMapProfile != null) {
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter != null) {
+                adapter.closeProfileProxy(BluetoothProfile.MAP_CLIENT, mMapProfile);
+            } else {
+                Log.e(TAG, "Cannot close MAP profile proxy: BluetoothAdapter is null");
+            }
+            mMapProfile = null;
+            mMapConnectedDevice = null;
+        }
         mMMSAudioPlayer.releaseMediaPlayer();
     }
 
@@ -5447,6 +5473,12 @@ public class ComposeMessageActivity extends Activity
                     || isCdmaNVMode()) && recipientCount > 0
                     && recipientCount <= MmsConfig.getRecipientLimit()
                     && mIsSmsEnabled;
+        } else if (mMapConnectedDevice != null ) {
+            return (mIsSmsEnabled
+                    && recipientCount > 0
+                    && recipientCount <= MmsConfig.getRecipientLimit()
+                    && (mWorkingMessage.hasAttachment()
+                            || mWorkingMessage.hasText() || mWorkingMessage.hasSubject()));
         } else {
             return (MessageUtils.getActivatedIccCardCount() > 0
                     || isCdmaNVMode()
@@ -5713,6 +5745,21 @@ public class ComposeMessageActivity extends Activity
                     // continue to send message
                     Log.e(TAG, "Cannot find EmergencyCallbackModeExitDialog", e);
                 }
+            } else {
+                if (mWorkingMessage.getResendMultiRecipients()) {
+                    // If resend sms recipient is more than one, use mResendSmsRecipient
+                    LogTag.debugD("sendMessage : mResendSmsRecipient= " + mResendSmsRecipient);
+                    if (mMapConnectedDevice != null) {
+                        sendBluetoothMessage(mResendSmsRecipient,
+                                mWorkingMessage.getText().toString(), null, null);
+                    }
+                } else {
+                    LogTag.debugD("sendMessage : mDebugRecipients= " + mDebugRecipients);
+                    if (mMapConnectedDevice != null) {
+                        sendBluetoothMessage(mDebugRecipients,
+                                mWorkingMessage.getText().toString(), null, null);
+                    }
+                }
             }
         }
 
@@ -5748,10 +5795,18 @@ public class ComposeMessageActivity extends Activity
             if (mWorkingMessage.getResendMultiRecipients()) {
                 // If resend sms recipient is more than one, use mResendSmsRecipient
                 LogTag.debugD("mWorkingMessage send mResendSmsRecipient=" + mResendSmsRecipient);
-                mWorkingMessage.send(mResendSmsRecipient);
+                if (MessageUtils.getActivatedIccCardCount() > 0
+                    || isCdmaNVMode()
+                    || isImsRegistered()) {
+                    mWorkingMessage.send(mResendSmsRecipient);
+                }
             } else {
                 LogTag.debugD("mWorkingMessage send mDebugRecipients=" + mDebugRecipients);
-                mWorkingMessage.send(mDebugRecipients);
+                if (MessageUtils.getActivatedIccCardCount() > 0
+                    || isCdmaNVMode()
+                    || isImsRegistered()) {
+                    mWorkingMessage.send(mDebugRecipients);
+                }
             }
 
             mSentMessage = true;
@@ -7626,7 +7681,17 @@ public class ComposeMessageActivity extends Activity
     @Override
     public void onRequestPermissionsResult(final int requestCode, final String permissions[],
             final int[] grantResults) {
-        if (requestCode == SAVE_ATTACHMENT_PERMISSION_REQUEST_CODE) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == BLUETOOTH_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted, initialize Bluetooth
+                initializeBluetoothMapClient();
+            } else {
+                // Permission denied, inform user
+                Toast.makeText(this, R.string.bluetooth_permission_denied, Toast.LENGTH_SHORT)
+                        .show();
+            }
+        } else if (requestCode == SAVE_ATTACHMENT_PERMISSION_REQUEST_CODE) {
             if (MessageUtils.hasStoragePermission()) {
                 mModeCallback.saveAttachment();
             } else {
@@ -7634,6 +7699,23 @@ public class ComposeMessageActivity extends Activity
             }
         }
     }
+
+    private void initializeBluetoothMapClient() {
+        if (getContext().checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+               != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { android.Manifest.permission.BLUETOOTH_CONNECT },
+                    BLUETOOTH_PERMISSION_REQUEST_CODE);
+            return;
+        }
+        BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (bluetoothAdapter != null) {
+            bluetoothAdapter.getProfileProxy(this, mBluetoothProfileServiceListener,
+                    BluetoothProfile.MAP_CLIENT);
+        } else {
+            LogTag.debugD("Bluetooth not supported on this device.");
+        }
+    }
+
    private ServiceConnection mConnection = new ServiceConnection() {
 
         public void onServiceConnected(ComponentName className, IBinder service) {
@@ -7710,4 +7792,103 @@ public class ComposeMessageActivity extends Activity
         }
         return false;
     }
+
+    private final BluetoothProfile.ServiceListener mBluetoothProfileServiceListener =
+            new BluetoothProfile.ServiceListener() {
+
+        @Override
+        public void onServiceConnected(int profile, BluetoothProfile proxy) {
+            LogTag.debugD("Service connected");
+            if (profile != BluetoothProfile.MAP_CLIENT) {
+                return;
+            }
+            mMapProfile = (BluetoothMapClient) proxy;
+            if (!ensureBluetoothPermissions()) {
+                return;
+            }
+            // Get connected devices
+            List<BluetoothDevice> connectedDevices = mMapProfile.getConnectedDevices();
+            if (connectedDevices != null && !connectedDevices.isEmpty()) {
+                // If there are multiple devices, we should ideally show a selection dialog
+                // For now, use the first connected device as default
+                mMapConnectedDevice = connectedDevices.get(0);
+                LogTag.debugD("Using Bluetooth device for messaging: "
+                        + mMapConnectedDevice.getName());
+            } else {
+                mMapConnectedDevice = null;
+                LogTag.debugD("No connected Bluetooth devices available for messaging");
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(int profile) {
+            if (profile == BluetoothProfile.MAP_CLIENT) {
+                LogTag.debugD("MAP profile disconnected.");
+                if (mMapProfile != null) {
+                    BluetoothAdapter.getDefaultAdapter()
+                            .closeProfileProxy(BluetoothProfile.MAP_CLIENT, mMapProfile);
+                    mMapProfile = null;
+                }
+                mMapConnectedDevice = null;
+            }
+        }
+    };
+
+    private boolean ensureBluetoothPermissions() {
+        if (getContext().checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { android.Manifest.permission.BLUETOOTH_CONNECT },
+                    BLUETOOTH_PERMISSION_REQUEST_CODE);
+            return false;
+        }
+        return true;
+    }
+
+    private void sendBluetoothMessage(String destAddr, String message,
+            final PendingIntent sentIntent, final PendingIntent deliveryIntent) {
+        if (!ensureBluetoothPermissions()) {
+            return;
+        }
+
+        LogTag.debugD("Sending message : (mMapConnectedDevice == null)? = "
+                + (mMapConnectedDevice == null));
+
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null || !adapter.isEnabled() || mMapProfile == null
+                || mMapConnectedDevice == null) {
+            LogTag.debugD("Bluetooth not available or not connected");
+            Toast.makeText(this, R.string.indication_send_message_failed,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (message == null || message.isEmpty()) {
+            LogTag.debugD("Cannot send empty message via Bluetooth");
+            return;
+        }
+
+        Collection<Uri> mDestAddr = Collections.singleton(new Uri.Builder()
+                .appendPath(destAddr)
+                .scheme(PhoneAccount.SCHEME_TEL)
+                .build());
+        try {
+            mMapProfile.sendMessage(mMapConnectedDevice, mDestAddr, message,
+                    sentIntent, deliveryIntent);
+            // Reset message state completely
+            message = null;
+            mWorkingMessage.setText("");
+            mTextEditor.setText("");
+            mWorkingMessage.discard();
+            mWorkingMessage = WorkingMessage.createEmpty(ComposeMessageActivity.this);
+            mWorkingMessage.setConversation(mConversation);
+            updateSendButtonState();
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "Invalid destination address for Bluetooth message", e);
+        } catch (Exception e) {
+            Log.e(TAG, "Error sending message via Bluetooth", e);
+            Toast.makeText(this, R.string.indication_send_message_failed,
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
 }
