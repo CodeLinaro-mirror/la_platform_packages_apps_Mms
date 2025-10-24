@@ -3481,7 +3481,7 @@ public class ComposeMessageActivity extends Activity
             }
         }
 
-        if (getRecipients().size() > 1) {
+        if (getRecipients().size() > 1 && mConversation.getThreadId() > 0) {
             menu.add(0, MENU_GROUP_PARTICIPANTS, 0, R.string.menu_group_participants);
         }
 
