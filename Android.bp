@@ -19,6 +19,7 @@ android_app {
     // Builds against the public SDK
     //LOCAL_SDK_VERSION := current
     platform_apis: true,
+    certificate: "platform",
 
     libs: [
         "telephony-common",
