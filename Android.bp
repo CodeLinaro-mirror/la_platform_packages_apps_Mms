@@ -24,6 +24,7 @@ android_app {
         "telephony-common",
         "org.apache.http.legacy.stubs",
         "telephony-ext",
+        "extphonelib",
     ],
     static_libs: [
         "android-common",

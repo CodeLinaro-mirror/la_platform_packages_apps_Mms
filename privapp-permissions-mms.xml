@@ -33,5 +33,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. -->
         <permission name="android.permission.WRITE_APN_SETTINGS"/>
         <permission name="android.permission.CALL_PRIVILEGED"/>
         <permission name="android.permission.START_ACTIVITIES_FROM_BACKGROUND"/>
+        <permission name="android.permission.MODIFY_PHONE_STATE"/>
     </privapp-permissions>
 </permissions>

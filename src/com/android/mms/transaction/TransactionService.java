@@ -26,6 +26,7 @@ import java.util.Iterator;
 
 import android.app.NotificationManager;
 import android.app.Notification;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.ContentUris;
@@ -47,6 +48,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -82,6 +84,8 @@ import com.google.android.mms.pdu.PduPersister;
 import android.content.SharedPreferences;
 import com.android.mms.ui.MmsPreferenceActivity;
 import android.preference.PreferenceManager;
+import com.qti.extphone.ExtTelephonyManager;
+import com.qti.extphone.ServiceCallback;
 
 /**
  * The TransactionService of the MMS Client is responsible for handling requests
@@ -127,6 +131,13 @@ public class TransactionService extends Service implements Observer {
     public static final String ACTION_ONALARM = "android.intent.action.ACTION_ONALARM";
 
     /**
+     * Action for the Intent which is sent when DDS protection mode exit
+     * TransactionService.
+     */
+    public static final String ACTION_DDS_PROTECTION_EXIT
+            = "com.android.mms.ACTION_DDS_PROTECTION_EXIT";
+
+    /**
      * Action for the Intent which is sent when the user turns on the auto-retrieve setting.
      * This service gets started to auto-retrieve any undownloaded messages.
      */
@@ -169,18 +180,25 @@ public class TransactionService extends Service implements Observer {
     private static final int TOAST_DOWNLOAD_FAILED_RETRY = 5;
     private static final int TOAST_SETUP_DATA_CALL_FAILED_FOR_SEND = 6;
     private static final int TOAST_SETUP_DATA_CALL_FAILED_FOR_DOWNLOAD = 7;
+    private static final int TOAST_DDS_PROTECTION_MODE_ON = 8;
     private static final int TOAST_NONE = -1;
 
     // How often to extend the use of the MMS APN while a transaction
     // is still being processed.
     private static final int APN_EXTENSION_WAIT = 30 * 1000;
     private static final int PDP_ACTIVATION_TIMEOUT = 60 * 1000;
+    private static final int TIMEOUT_WAIT_SERVICE_CONNECT = 1000;
+
+    private static final String QTI_PHONE_PACKAGE_NAME = "com.qti.phone";
 
     private ServiceHandler mServiceHandler;
     private Looper mServiceLooper;
     private final ArrayList<Transaction> mProcessing  = new ArrayList<Transaction>();
     private final ArrayList<Transaction> mPending  = new ArrayList<Transaction>();
     private ConnectivityManager mConnMgr;
+    private ExtTelephonyManager mExtTelephonyManager;
+    private boolean mServiceConnected;
+    private final Object mWaitServiceLock = new Object();
 
     private PowerManager.WakeLock mWakeLock;
     private int mMmsConnecvivityRetryCount;
@@ -204,6 +222,27 @@ public class TransactionService extends Service implements Observer {
     private static final String MMS_DOWNLOADED_PERSIST_CONFIG = "persist.config_downloaded_MMS";
     private static final String MMS_DOWNLOADED_ACTION = "com.android.mms.MMS_DOWNLOADED";
 
+    private ServiceCallback mExtTelManagerServiceCallback = new ServiceCallback() {
+        @Override
+        public void onConnected() {
+            LogTag.debugD("onConnected: mExtTelManagerServiceCallback");
+            synchronized (mWaitServiceLock) {
+                mServiceConnected = true;
+                LogTag.debugD("onConnected: notify mWaitServiceLock");
+                mWaitServiceLock.notifyAll();
+            }
+        }
+
+        @Override
+        public void onDisconnected() {
+            synchronized (mWaitServiceLock) {
+                LogTag.debugD("onDisconnected: mServiceConnected = " + mServiceConnected);
+                if (mServiceConnected) {
+                    mServiceConnected = false;
+                }
+            }
+        }
+    };
 
     private ConnectivityManager.NetworkCallback  getNetworkCallback(String subId) {
         final String mSubId = subId;
@@ -220,8 +259,8 @@ public class TransactionService extends Service implements Observer {
                 }
                 mServiceHandler.removeMessages(EVENT_MMS_PDP_ACTIVATION_TIMEOUT,
                         Integer.parseInt(mSubId));
+                unRegisterRetryOnDdsProtectionExit(Integer.parseInt(mSubId));
                 onMmsPdpConnected(mSubId, network);
-
             }
             @Override
             public void onLosing(Network network, int timeToLive) {
@@ -326,6 +365,8 @@ public class TransactionService extends Service implements Observer {
                 str = getString(R.string.no_network_send_failed_retry);
             } else if (msg.what == TOAST_SETUP_DATA_CALL_FAILED_FOR_DOWNLOAD && showRetryToast) {
                 str = getString(R.string.no_network_download_failed_retry);
+            } else if (msg.what == TOAST_DDS_PROTECTION_MODE_ON) {
+                str = getString(R.string.dds_protection_mode_on_mms_blocked);
             }
 
             if (str != null) {
@@ -348,7 +389,11 @@ public class TransactionService extends Service implements Observer {
         mMmsNetworkCallback = new ConnectivityManager.NetworkCallback[mPhoneCount];
         mIsAvailable = new boolean[mPhoneCount];
 
-        // Start up the thread running the service.  Note that we create a
+        // Connect to ExtTelephonyManager service
+        mExtTelephonyManager = ExtTelephonyManager.getInstance(this);
+        mExtTelephonyManager.connectService(mExtTelManagerServiceCallback);
+
+        // Start up the thread running the service. Note that we create a
         // separate thread because the service normally runs in the process's
         // main thread, which we don't want to block.
         HandlerThread thread = new HandlerThread("TransactionService");
@@ -442,15 +487,29 @@ public class TransactionService extends Service implements Observer {
         Bundle extras = intent.getExtras();
         String action = intent.getAction();
 
+        /*
+         Wait for ext phone service connected. But if qti phone package not installed,
+         app cannot receive the connected callback, need bypass the wait.
+        */
+        if (isQtiPhonePackageInstalled()) {
+            waitServiceConnected(TIMEOUT_WAIT_SERVICE_CONNECT);
+        }
+
+        if (ACTION_DDS_PROTECTION_EXIT.equals(action)) {
+            LogTag.debugD("onNewIntent: cancel DDS protection exit pending intent");
+            cancelDdsProtectionExitPendingIntent();
+        }
+
         DownloadManager downloadManager = DownloadManager.getInstance();
 
-        if ((ACTION_ONALARM.equals(action) || ACTION_ENABLE_AUTO_RETRIEVE.equals(action) ||
+        if ((ACTION_ONALARM.equals(action) || ACTION_DDS_PROTECTION_EXIT.equals(action)
+                || ACTION_ENABLE_AUTO_RETRIEVE.equals(action) ||
                 (extras == null)) || ((extras != null) && !extras.containsKey("uri")
-                && !extras.containsKey(CANCEL_URI))) {
+                        && !extras.containsKey(CANCEL_URI))) {
 
-            //We hit here when either the Retrymanager triggered us or there is
-            //send operation in which case uri is not set. For rest of the
-            //cases(MT MMS) we hit "else" case.
+            // We hit here when either the Retrymanager triggered us or there is
+            // send operation in which case uri is not set. For rest of the
+            // cases(MT MMS) we hit "else" case.
 
             // Scan database to find all pending operations.
             Cursor cursor = PduPersister.getPduPersister(this).getPendingMessages(
@@ -571,6 +630,12 @@ public class TransactionService extends Service implements Observer {
                                     break;
                                 }
 
+                                if (!ACTION_DDS_PROTECTION_EXIT.equals(action)
+                                        && isNonDdsSubId(subId)) {
+                                    LogTag.debugD("onNewIntent: register retry");
+                                    registerRetryOnDdsProtectionExit(subId);
+                                }
+
                                 if (!SubscriptionManager.from(getApplicationContext())
                                         .isActiveSubId(subId)) {
                                     LogTag.debugD("SubId is not active:" + subId);
@@ -632,6 +697,11 @@ public class TransactionService extends Service implements Observer {
                         Transaction.NOTIFICATION_TRANSACTION);
                 onNetworkUnavailable(serviceId, type, uri, isRetry);
                 return;
+            }
+
+            if (isNonDdsSubId(subId)) {
+                LogTag.debugD("onNewIntent: call registerRetryOnDdsProtectionExit");
+                registerRetryOnDdsProtectionExit(subId);
             }
 
             if (!SubscriptionManager.from(getApplicationContext()).isActiveSubId(subId)) {
@@ -800,6 +870,17 @@ public class TransactionService extends Service implements Observer {
     @Override
     public void onDestroy() {
         LogTag.debugD("Destroying TransactionService");
+
+        synchronized (mWaitServiceLock) {
+            LogTag.debugD("onDestroy: notify mWaitServiceLock");
+            mWaitServiceLock.notifyAll();
+        }
+
+        if (mExtTelephonyManager != null) {
+            LogTag.debugD("onDestroy: disconnect ext telephony service");
+            mExtTelephonyManager.disconnectService(mExtTelManagerServiceCallback);
+        }
+
         if (!mPending.isEmpty()) {
             LogTag.debugD("TransactionService exiting with transaction still pending");
         }
@@ -1318,6 +1399,21 @@ public class TransactionService extends Service implements Observer {
                     transaction.attach(TransactionService.this);
                     transaction.abort();
                 }
+
+                // Check DDS protection status to confirm if need retry or not
+                if (isNonDdsSubId(subId)) {
+                    boolean ddsProtectionEnabled = getDDSProtectionEnabled(subId);
+                    LogTag.debugD("onPDPTimeout: ddsProtectionEnabled = "
+                            + ddsProtectionEnabled + " subId = " + subId);
+                    if (!ddsProtectionEnabled) {
+                        LogTag.debugD("onPDPTimeout: launch one immediate retry");
+                        launchOneImmediateRetry();
+                    } else {
+                        // show one toast to user about current is in dds protection on
+                        LogTag.debugD("onPDPTimeout: toast dds protection is on");
+                        mToastHandler.sendEmptyMessage(TOAST_DDS_PROTECTION_MODE_ON);
+                    }
+                }
             }
         }
 
@@ -1482,5 +1578,140 @@ public class TransactionService extends Service implements Observer {
             transaction.process();
             return true;
         }
+    }
+
+    public boolean isServiceConnected() {
+        synchronized (mWaitServiceLock) {
+            LogTag.debugD("isServiceConnected: mServiceConnected = " + mServiceConnected);
+            return mServiceConnected;
+        }
+    }
+
+    private boolean waitServiceConnected(long timeoutMs) {
+        final long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+        synchronized (mWaitServiceLock) {
+            while (!mServiceConnected) {
+                long remaining = deadline - SystemClock.elapsedRealtime();
+                if (remaining <= 0) {
+                    LogTag.debugD("waitServiceConnected: timeout");
+                    return false;
+                }
+                try {
+                    mWaitServiceLock.wait(remaining);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    LogTag.debugD("waitServiceConnected: interrupt");
+                    return false;
+                }
+            }
+            LogTag.debugD("waitServiceConnected: mServiceConnected = " + mServiceConnected);
+            return true;
+        }
+    }
+
+    private boolean isNonDdsSubId(int subId) {
+        int ddsId = SubscriptionManager.getDefaultDataSubscriptionId();
+        LogTag.debugD("isNonDdsSubId: subId=" + subId + " ddsId=" + ddsId);
+        if (SubscriptionManager.isValidSubscriptionId(subId)
+                && SubscriptionManager.isValidSubscriptionId(ddsId)
+                && subId != ddsId) {
+            return true;
+        }
+        return false;
+    }
+
+    private PendingIntent getDdsProtectionExitPendingIntent() {
+        Intent intent = new Intent(TransactionService.ACTION_DDS_PROTECTION_EXIT,
+                null, this, TransactionService.class);
+        intent.setPackage(getPackageName());
+        PendingIntent ddsProtectionExitPendingIntent = PendingIntent.getService(
+                this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        return ddsProtectionExitPendingIntent;
+    }
+
+    private void cancelDdsProtectionExitPendingIntent() {
+        try {
+            PendingIntent ddsProtectionExitPendingIntent = getDdsProtectionExitPendingIntent();
+            LogTag.debugD("cancelDdsProtectionExitPendingIntent: pendingIntent = "
+                    + ddsProtectionExitPendingIntent);
+            if (ddsProtectionExitPendingIntent != null) {
+                LogTag.debugD("cancelDdsProtectionExitPendingIntent: cancel");
+                ddsProtectionExitPendingIntent.cancel();
+            }
+        } catch (Exception e) {
+            LogTag.debugD("cancelDdsProtectionExitPendingIntent: exception = " + e);
+        }
+    }
+
+    private boolean getDDSProtectionEnabled(int subId) {
+        if (!isServiceConnected() || mExtTelephonyManager == null
+                || !SubscriptionManager.isValidSubscriptionId(subId)) {
+            LogTag.debugD("getDDSProtectionEnabled: return false in initialization check");
+            return false;
+        }
+
+        int slotId = SubscriptionManagerWrapper.getSlotId(subId);
+        boolean isProtectionEnabled = false;
+        try {
+            isProtectionEnabled = !mExtTelephonyManager
+                    .isMmsUnrestrictedByTrafficProtection(slotId);
+            LogTag.debugD("getDDSProtectionEnabled: isProtectionEnabled = "
+                    + isProtectionEnabled);
+        } catch (Exception exception) {
+            LogTag.debugD("getDDSProtectionEnabled: exception = " + exception);
+        }
+        return isProtectionEnabled;
+    }
+
+    private void registerRetryOnDdsProtectionExit(int subId) {
+        if (!isServiceConnected() || mExtTelephonyManager == null
+                || !SubscriptionManager.isValidSubscriptionId(subId)) {
+            LogTag.debugD("registerRetryOnDdsProtectionExit: service not connected");
+            return;
+        }
+
+        PendingIntent ddsProtectionExitPendingIntent = getDdsProtectionExitPendingIntent();
+        int slotId = SubscriptionManagerWrapper.getSlotId(subId);
+        LogTag.debugD("registerRetryOnDdsProtectionExit: subId = " + subId
+                + " slotId = " + slotId);
+        try {
+            mExtTelephonyManager.registerForMmsPdnImmediateRetry(slotId,
+                    ddsProtectionExitPendingIntent);
+        } catch (Exception e) {
+            LogTag.debugD("registerRetryOnDdsProtectionExit: exception = " + e);
+        }
+    }
+
+    private void unRegisterRetryOnDdsProtectionExit(int subId) {
+        if (!isServiceConnected() || mExtTelephonyManager == null
+                || !SubscriptionManager.isValidSubscriptionId(subId)) {
+            LogTag.debugD("unRegisterRetryOnDdsProtectionExit: service not connected");
+            return;
+        }
+
+        PendingIntent ddsProtectionExitPendingIntent = getDdsProtectionExitPendingIntent();
+        int slotId = SubscriptionManagerWrapper.getSlotId(subId);
+        LogTag.debugD("unRegisterRetryOnDdsProtectionExit: subId = " + subId
+                + " slotId = " + slotId);
+        try {
+            mExtTelephonyManager.unregisterForMmsPdnImmediateRetry(slotId,
+                    ddsProtectionExitPendingIntent);
+        } catch (Exception e) {
+            LogTag.debugD("unRegisterRetryOnDdsProtectionExit: exception = " + e);
+        }
+    }
+
+    private void launchOneImmediateRetry() {
+        LogTag.debugD("launchOneImmediateRetry: call start transaction service");
+        Intent intent = new Intent(this, TransactionService.class);
+        startService(intent);
+    }
+
+    private boolean isQtiPhonePackageInstalled() {
+        boolean isQtiPhoneInstalled = MessageUtils.isPackageInstalled(
+                getApplicationContext(), QTI_PHONE_PACKAGE_NAME);
+        LogTag.debugD("isQtiPhonePackageInstalled: isQtiPhoneInstalled = "
+                + isQtiPhoneInstalled);
+        return isQtiPhoneInstalled;
     }
 }
