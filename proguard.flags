@@ -5,3 +5,7 @@
 -keep class com.android.mms.ui.SlideshowPresenter {
 *;
 }
+
+-keep class com.android.mms.transaction.TransactionService {
+*;
+}

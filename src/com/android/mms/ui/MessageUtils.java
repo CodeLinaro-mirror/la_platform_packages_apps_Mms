@@ -3786,6 +3786,26 @@ public class MessageUtils {
         }
     }
 
+    public static boolean isPackageInstalled(Context context, String packageName) {
+        Log.d(TAG, "isPackageInstalled: packageName = " + packageName);
+        if (context == null || packageName == null) {
+            return false;
+        }
+
+        PackageManager pm = context.getPackageManager();
+        if (pm == null) {
+            Log.e(TAG, "isPackageInstalled: pm is null");
+            return false;
+        }
+
+        try {
+            pm.getPackageInfo(packageName, PackageManager.GET_SERVICES);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
     public static boolean hideKeyboardIfVisible(Activity activity) {
         if (activity == null) {
             return false;
@@ -3805,5 +3825,4 @@ public class MessageUtils {
         }
         return false;
     }
-
 }
