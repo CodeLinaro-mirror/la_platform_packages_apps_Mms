@@ -5665,7 +5665,8 @@ public class ComposeMessageActivity extends Activity
         }
 
         int subId = mWorkingMessage.getWorkingMessageSub();
-        if (SystemProperties.getBoolean(PROP_KEY_DSDS_to_SS, false)) {
+        int dsdsToSsConfigStatus = SystemProperties.getInt(PROP_KEY_DSDS_to_SS, 0);
+        if (dsdsToSsConfigStatus == 1 || dsdsToSsConfigStatus == 2) {
             final SubscriptionManager subscriptionManager = (SubscriptionManager) getContext()
                     .getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
             if (SubscriptionManagerWrapper.INVALID_SUBSCRIPTION_ID == subId
