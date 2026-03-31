@@ -240,7 +240,7 @@ public class Conversation {
                 }
                 return get(context, threadId, allowQuery);
             } catch (NumberFormatException exception) {
-                LogTag.error("Invalid URI: " + uri);
+                LogTag.debugD("Invalid URI: " + uri);
             }
         }
 
