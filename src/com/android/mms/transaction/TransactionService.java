@@ -882,14 +882,17 @@ public class TransactionService extends Service implements Observer {
     public void onDestroy() {
         LogTag.debugD("Destroying TransactionService");
 
-        synchronized (mWaitServiceLock) {
-            LogTag.debugD("onDestroy: notify mWaitServiceLock");
-            mWaitServiceLock.notifyAll();
-        }
-
         if (mExtTelephonyManager != null) {
             LogTag.debugD("onDestroy: disconnect ext telephony service");
             mExtTelephonyManager.disconnectService(mExtTelManagerServiceCallback);
+        }
+
+        synchronized (mWaitServiceLock) {
+            // no onDisconnected callback after calling disconnectService API.
+            // so need actively update this status to false
+            mServiceConnected = false;
+            LogTag.debugD("onDestroy: notify mWaitServiceLock");
+            mWaitServiceLock.notifyAll();
         }
 
         if (!mPending.isEmpty()) {
