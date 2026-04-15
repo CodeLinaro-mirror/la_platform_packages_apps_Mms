@@ -264,8 +264,6 @@ public class ComposeMessageActivity extends Activity
     private static final boolean LOCAL_LOGV = false;
     private static final boolean DEBUG_MULTI_CHOICE = true;
 
-    private static final String PROP_KEY_DSDS_to_SS = "persist.vendor.radio.dsds_to_ss";
-
     // Menu ID
     private static final int MENU_ADD_SUBJECT           = 0;
     private static final int MENU_DELETE_THREAD         = 1;
@@ -5665,18 +5663,16 @@ public class ComposeMessageActivity extends Activity
         }
 
         int subId = mWorkingMessage.getWorkingMessageSub();
-        int dsdsToSsConfigStatus = SystemProperties.getInt(PROP_KEY_DSDS_to_SS, 0);
-        if (dsdsToSsConfigStatus == 1 || dsdsToSsConfigStatus == 2) {
-            final SubscriptionManager subscriptionManager = (SubscriptionManager) getContext()
-                    .getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
-            if (SubscriptionManagerWrapper.INVALID_SUBSCRIPTION_ID == subId
-                    || !subscriptionManager.isActiveSubscriptionId(subId)) {
-                int defaultSmsSub = SubscriptionManager.getDefaultSmsSubscriptionId();
-                Log.d(TAG, "sendMessage: use defaultSmsSub = " + defaultSmsSub
-                        + " to replace subId" + subId);
-                mWorkingMessage.setWorkingMessageSub(defaultSmsSub);
-                subId = defaultSmsSub;
-            }
+        SubscriptionManager subscriptionManager = (SubscriptionManager) getContext()
+                .getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+        if (SubscriptionManagerWrapper.INVALID_SUBSCRIPTION_ID == subId
+                || (subscriptionManager != null && !subscriptionManager.isActiveSubscriptionId(
+                        subId))) {
+            int defaultSmsSub = SubscriptionManager.getDefaultSmsSubscriptionId();
+            Log.d(TAG, "sendMessage: use defaultSmsSub = " + defaultSmsSub
+                    + " to replace subId" + subId);
+            mWorkingMessage.setWorkingMessageSub(defaultSmsSub);
+            subId = defaultSmsSub;
         }
 
         // Check MMS APN config, prompt one dialog if missing MMS APN or its config incorrect
