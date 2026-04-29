@@ -138,6 +138,12 @@ public class TransactionService extends Service implements Observer {
             = "com.android.mms.ACTION_DDS_PROTECTION_EXIT";
 
     /**
+     * Action for the Intent which is sent when requiring to do once retry immediately
+     * TransactionService.
+     */
+    public static final String ACTION_RETRY_ONCE = "com.android.mms.ACTION_RETRY_ONCE";
+
+    /**
      * Action for the Intent which is sent when the user turns on the auto-retrieve setting.
      * This service gets started to auto-retrieve any undownloaded messages.
      */
@@ -503,8 +509,9 @@ public class TransactionService extends Service implements Observer {
         DownloadManager downloadManager = DownloadManager.getInstance();
 
         if ((ACTION_ONALARM.equals(action) || ACTION_DDS_PROTECTION_EXIT.equals(action)
-                || ACTION_ENABLE_AUTO_RETRIEVE.equals(action) ||
-                (extras == null)) || ((extras != null) && !extras.containsKey("uri")
+                || ACTION_RETRY_ONCE.equals(action)
+                || ACTION_ENABLE_AUTO_RETRIEVE.equals(action)
+                || (extras == null)) || ((extras != null) && !extras.containsKey("uri")
                         && !extras.containsKey(CANCEL_URI))) {
 
             // We hit here when either the Retrymanager triggered us or there is
@@ -512,8 +519,12 @@ public class TransactionService extends Service implements Observer {
             // cases(MT MMS) we hit "else" case.
 
             // Scan database to find all pending operations.
-            Cursor cursor = PduPersister.getPduPersister(this).getPendingMessages(
-                    System.currentTimeMillis());
+            long dueTime = System.currentTimeMillis();
+            if (ACTION_DDS_PROTECTION_EXIT.equals(action) || ACTION_RETRY_ONCE.equals(action)) {
+                LogTag.debugD("onNewIntent: query all pending messages");
+                dueTime = Long.MAX_VALUE;
+            }
+            Cursor cursor = PduPersister.getPduPersister(this).getPendingMessages(dueTime);
             LogTag.debugD("Cursor= " + DatabaseUtils.dumpCursorToString(cursor));
             if (cursor != null) {
                 try {
@@ -871,14 +882,17 @@ public class TransactionService extends Service implements Observer {
     public void onDestroy() {
         LogTag.debugD("Destroying TransactionService");
 
-        synchronized (mWaitServiceLock) {
-            LogTag.debugD("onDestroy: notify mWaitServiceLock");
-            mWaitServiceLock.notifyAll();
-        }
-
         if (mExtTelephonyManager != null) {
             LogTag.debugD("onDestroy: disconnect ext telephony service");
             mExtTelephonyManager.disconnectService(mExtTelManagerServiceCallback);
+        }
+
+        synchronized (mWaitServiceLock) {
+            // no onDisconnected callback after calling disconnectService API.
+            // so need actively update this status to false
+            mServiceConnected = false;
+            LogTag.debugD("onDestroy: notify mWaitServiceLock");
+            mWaitServiceLock.notifyAll();
         }
 
         if (!mPending.isEmpty()) {
@@ -1703,7 +1717,8 @@ public class TransactionService extends Service implements Observer {
 
     private void launchOneImmediateRetry() {
         LogTag.debugD("launchOneImmediateRetry: call start transaction service");
-        Intent intent = new Intent(this, TransactionService.class);
+        Intent intent = new Intent(TransactionService.ACTION_RETRY_ONCE, null, this,
+                TransactionService.class);
         startService(intent);
     }
 
