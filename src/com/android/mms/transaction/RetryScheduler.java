@@ -245,7 +245,12 @@ public class RetryScheduler implements Observer {
                 respStatus = cursor.getInt(cursor.getColumnIndexOrThrow(Mms.RESPONSE_STATUS));
             }
         } finally {
-            cursor.close();
+            try {
+                cursor.close();
+            } catch (IllegalStateException e) {
+                // Log and handle gracefully; don't crash
+                Log.e(TAG, "cursor close failed, provider reference mismatch", e);
+            }
         }
         if (respStatus != 0) {
             Log.e(TAG, "Response status is: " + respStatus);
