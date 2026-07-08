@@ -592,6 +592,11 @@ public class ComposeMessageActivity extends Activity
     private final IntentFilter mAirplaneModeFilter = new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED);
     private final IntentFilter mSIMStatusChangeFilter = new IntentFilter(SIM_STATE_CHANGE_ACTION);
 
+    // MapClient broadcasts this (to all users) when a BT MAP messaging session
+    // becomes ready or ends — use it instead of polling profile proxies.
+    private final IntentFilter mBtMapStateFilter =
+            new IntentFilter(com.android.mms.MmsApp.BT_MAP_MESSAGING_STATE_CHANGED);
+
     @SuppressWarnings("unused")
     public static void log(String logMsg) {
         Thread current = Thread.currentThread();
@@ -2405,6 +2410,10 @@ public class ComposeMessageActivity extends Activity
 
         initialize(savedInstanceState, 0);
 
+        // Seed BT MAP state from the app-level cache. The actual send button refresh
+        // happens in onStart() after mIsSmsEnabled is correctly set.
+        mMapConnectedDevice = com.android.mms.MmsApp.getMapConnectedDevice();
+
         // Request Nearby device permission if not prsent
         // TODO : whitelist permission at compiletime
         initializeBluetoothMapClient();
@@ -2763,6 +2772,20 @@ public class ComposeMessageActivity extends Activity
 
         registerReceiver(mAirplaneModeBroadcastReceiver, mAirplaneModeFilter);
         registerReceiver(mSimBroadcastReceiver, mSIMStatusChangeFilter);
+        registerReceiver(mBtMapStateReceiver, mBtMapStateFilter);
+
+        // Re-seed from the app-level cache: if the BT MAP device connected or
+        // disconnected while this activity was stopped, mBtMapStateReceiver was
+        // unregistered and missed the broadcast, so mMapConnectedDevice would
+        // otherwise still hold whatever stale value it had before onStop().
+        mMapConnectedDevice = com.android.mms.MmsApp.getMapConnectedDevice();
+
+        // Now that mIsSmsEnabled is correctly set (above) and mBtMapStateReceiver is
+        // registered, refresh the send button to reflect the re-seeded BT MAP state.
+        // Without this, onCreate() would call updateSendButtonState() with
+        // mIsSmsEnabled=false and the button stays disabled, or stays stale-enabled
+        // if the device disconnected while this activity was stopped.
+        updateSendButtonState();
 
         // figure out whether we need to show the keyboard or not.
         // if there is draft to be loaded for 'mConversation', we'll show the keyboard;
@@ -3012,6 +3035,7 @@ public class ComposeMessageActivity extends Activity
         unregisterReceiver(mMediaStateReceiver);
         unregisterReceiver(mAirplaneModeBroadcastReceiver);
         unregisterReceiver(mSimBroadcastReceiver);
+        unregisterReceiver(mBtMapStateReceiver);
 
         if (mAttachmentSelector.getVisibility() == View.VISIBLE) {
             mAttachmentSelector.setVisibility(View.GONE);
@@ -5474,11 +5498,16 @@ public class ComposeMessageActivity extends Activity
                     && recipientCount <= MmsConfig.getRecipientLimit()
                     && mIsSmsEnabled;
         } else if (mMapConnectedDevice != null ) {
-            return (mIsSmsEnabled
-                    && recipientCount > 0
+            // BT MAP provides SMS capability via Bluetooth, not a physical SIM.
+            // Do not require mIsSmsEnabled (which checks for active SIM subscriptions)
+            // — on a car head unit with no SIM, mIsSmsEnabled is false even when
+            // BT MAP is the active messaging transport.
+            // BT MAP (BluetoothMapClient.sendMessage) only supports plain-text
+            // SMS; attachments cannot be sent over this transport.
+            return (recipientCount > 0
                     && recipientCount <= MmsConfig.getRecipientLimit()
-                    && (mWorkingMessage.hasAttachment()
-                            || mWorkingMessage.hasText() || mWorkingMessage.hasSubject()));
+                    && !mWorkingMessage.hasAttachment()
+                    && (mWorkingMessage.hasText() || mWorkingMessage.hasSubject()));
         } else {
             return (MessageUtils.getActivatedIccCardCount() > 0
                     || isCdmaNVMode()
@@ -5745,21 +5774,23 @@ public class ComposeMessageActivity extends Activity
                     // continue to send message
                     Log.e(TAG, "Cannot find EmergencyCallbackModeExitDialog", e);
                 }
-            } else {
+            } else if (mMapConnectedDevice != null) {
+                // BT MAP send is a distinct transport from mWorkingMessage.send() below —
+                // sendBluetoothMessage() already clears mWorkingMessage/mTextEditor on success,
+                // so falling through would send the (now-empty) message a second time via the
+                // normal SMS path, which fails with "divideMessage returned empty messages"
+                // and shows a false "Not sent" error even though the BT MAP send succeeded.
                 if (mWorkingMessage.getResendMultiRecipients()) {
                     // If resend sms recipient is more than one, use mResendSmsRecipient
                     LogTag.debugD("sendMessage : mResendSmsRecipient= " + mResendSmsRecipient);
-                    if (mMapConnectedDevice != null) {
-                        sendBluetoothMessage(mResendSmsRecipient,
-                                mWorkingMessage.getText().toString(), null, null);
-                    }
+                    sendBluetoothMessage(mResendSmsRecipient,
+                            mWorkingMessage.getText().toString(), null, null);
                 } else {
                     LogTag.debugD("sendMessage : mDebugRecipients= " + mDebugRecipients);
-                    if (mMapConnectedDevice != null) {
-                        sendBluetoothMessage(mDebugRecipients,
-                                mWorkingMessage.getText().toString(), null, null);
-                    }
+                    sendBluetoothMessage(mDebugRecipients,
+                            mWorkingMessage.getText().toString(), null, null);
                 }
+                return;
             }
         }
 
@@ -7707,6 +7738,10 @@ public class ComposeMessageActivity extends Activity
                     BLUETOOTH_PERMISSION_REQUEST_CODE);
             return;
         }
+        // Connection state is tracked via mBtMapStateReceiver (MapClient broadcast).
+        // This method only acquires the profile proxy needed for sending messages.
+        // Avoid creating multiple proxy bindings — reuse if already bound.
+        if (mMapProfile != null) return;
         BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter != null) {
             bluetoothAdapter.getProfileProxy(this, mBluetoothProfileServiceListener,
@@ -7793,43 +7828,77 @@ public class ComposeMessageActivity extends Activity
         return false;
     }
 
+    private final BroadcastReceiver mBtMapStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!com.android.mms.MmsApp.BT_MAP_MESSAGING_STATE_CHANGED.equals(intent.getAction())) {
+                return;
+            }
+            int state = intent.getIntExtra(com.android.mms.MmsApp.EXTRA_MESSAGING_STATE, 0);
+            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE,
+                    BluetoothDevice.class);
+            if (state == com.android.mms.MmsApp.MESSAGING_STATE_CONNECTED && device != null) {
+                mMapConnectedDevice = device;
+                LogTag.debugD("BT MAP messaging ready: " + device.getName());
+            } else {
+                mMapConnectedDevice = null;
+                LogTag.debugD("BT MAP messaging ended");
+            }
+            updateSendButtonState();
+        }
+    };
+
     private final BluetoothProfile.ServiceListener mBluetoothProfileServiceListener =
             new BluetoothProfile.ServiceListener() {
 
         @Override
         public void onServiceConnected(int profile, BluetoothProfile proxy) {
-            LogTag.debugD("Service connected");
-            if (profile != BluetoothProfile.MAP_CLIENT) {
-                return;
-            }
+            if (profile != BluetoothProfile.MAP_CLIENT) return;
             mMapProfile = (BluetoothMapClient) proxy;
-            if (!ensureBluetoothPermissions()) {
-                return;
-            }
-            // Get connected devices
-            List<BluetoothDevice> connectedDevices = mMapProfile.getConnectedDevices();
-            if (connectedDevices != null && !connectedDevices.isEmpty()) {
-                // If there are multiple devices, we should ideally show a selection dialog
-                // For now, use the first connected device as default
-                mMapConnectedDevice = connectedDevices.get(0);
-                LogTag.debugD("Using Bluetooth device for messaging: "
-                        + mMapConnectedDevice.getName());
-            } else {
-                mMapConnectedDevice = null;
-                LogTag.debugD("No connected Bluetooth devices available for messaging");
+            // One-time current-state query: handles activity recreation (rotation,
+            // low-memory kill) while the device is already connected. In that case
+            // the CONNECTED broadcast was already sent before this activity instance
+            // existed, so we'd otherwise have mMapConnectedDevice=null forever.
+            // Ongoing connect/disconnect events are handled by mBtMapStateReceiver.
+            if (mMapConnectedDevice == null && ensureBluetoothPermissions()) {
+                List<BluetoothDevice> connected = mMapProfile.getConnectedDevices();
+                if (connected != null && !connected.isEmpty()) {
+                    mMapConnectedDevice = connected.get(0);
+                    LogTag.debugD("MAP proxy acquired, existing device: "
+                            + mMapConnectedDevice.getName());
+                    updateSendButtonState();
+                }
             }
         }
 
         @Override
         public void onServiceDisconnected(int profile) {
             if (profile == BluetoothProfile.MAP_CLIENT) {
-                LogTag.debugD("MAP profile disconnected.");
+                LogTag.debugD("MAP profile proxy lost");
                 if (mMapProfile != null) {
                     BluetoothAdapter.getDefaultAdapter()
                             .closeProfileProxy(BluetoothProfile.MAP_CLIENT, mMapProfile);
                     mMapProfile = null;
                 }
-                mMapConnectedDevice = null;
+                // Do NOT call initializeBluetoothMapClient() here — rapid disconnects
+                // would create unbounded proxy bindings. The proxy will be re-acquired
+                // lazily in initializeBluetoothMapClient() when the activity starts or
+                // the user tries to send a message.
+                //
+                // Proxy loss is distinct from a MAP session disconnect broadcast — it can
+                // happen without a corresponding mBtMapStateReceiver event (e.g. Bluetooth
+                // service crash/reclaim), which would otherwise leave mMapConnectedDevice
+                // stale and the send button incorrectly enabled. mBtMapStateReceiver will
+                // restore the device if/when the session reconnects.
+                //
+                // Also clear the app-level cache: without this, the next onStart() re-seed
+                // (mMapConnectedDevice = MmsApp.getMapConnectedDevice()) would restore the
+                // stale device even though the proxy is gone, re-enabling the send button.
+                com.android.mms.MmsApp.clearMapConnectedDevice();
+                if (mMapConnectedDevice != null) {
+                    mMapConnectedDevice = null;
+                    updateSendButtonState();
+                }
             }
         }
     };
@@ -7848,6 +7917,11 @@ public class ComposeMessageActivity extends Activity
             final PendingIntent sentIntent, final PendingIntent deliveryIntent) {
         if (!ensureBluetoothPermissions()) {
             return;
+        }
+
+        // Re-acquire proxy lazily if it was lost (e.g., after onServiceDisconnected).
+        if (mMapProfile == null) {
+            initializeBluetoothMapClient();
         }
 
         LogTag.debugD("Sending message : (mMapConnectedDevice == null)? = "

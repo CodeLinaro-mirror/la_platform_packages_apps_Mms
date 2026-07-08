@@ -59,9 +59,60 @@ import android.provider.Telephony.Mms;
 import android.net.ConnectivityManager;
 import com.android.mms.transaction.SmsRejectedReceiver;
 import android.provider.Telephony.Sms;
+import android.bluetooth.BluetoothDevice;
 
 public class MmsApp extends Application {
     public static final String LOG_TAG = LogTag.TAG;
+
+    // BT MAP action constants. ComposeMessageActivity references these directly
+    // rather than redeclaring its own copies.
+    public static final String BT_MAP_MESSAGING_STATE_CHANGED =
+            "com.android.bluetooth.mapclient.action.MESSAGING_STATE_CHANGED";
+    public static final String EXTRA_MESSAGING_STATE = "state";
+    public static final int MESSAGING_STATE_CONNECTED = 1;
+
+    // Persistent BT MAP connection state, kept at Application scope so it
+    // survives between ComposeMessageActivity instances.  ComposeMessageActivity
+    // reads this in onCreate() for immediate send-button display without waiting
+    // for async proxy binding.
+    private static volatile BluetoothDevice sMapConnectedDevice = null;
+
+    /** Returns the last known connected BT MAP device, or null if disconnected. */
+    public static BluetoothDevice getMapConnectedDevice() {
+        return sMapConnectedDevice;
+    }
+
+    /**
+     * Invalidates the cached BT MAP device, e.g. when ComposeMessageActivity loses its
+     * BluetoothMapClient proxy (profile crash/reclaim) without a matching
+     * ACTION_MESSAGING_STATE_CHANGED broadcast, which would otherwise leave this cache
+     * stale and re-enable the send button on the next onStart() re-seed.
+     */
+    public static void clearMapConnectedDevice() {
+        sMapConnectedDevice = null;
+    }
+
+    // Registered for the full process lifetime so BT MAP connect/disconnect
+    // broadcasts are never missed between ComposeMessageActivity sessions.
+    private final BroadcastReceiver mBtMapAppReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!BT_MAP_MESSAGING_STATE_CHANGED.equals(intent.getAction())) return;
+            int state = intent.getIntExtra(EXTRA_MESSAGING_STATE, 0);
+            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE,
+                    BluetoothDevice.class);
+            sMapConnectedDevice = (state == MESSAGING_STATE_CONNECTED && device != null)
+                    ? device : null;
+            if (Log.isLoggable(LOG_TAG, Log.DEBUG)) {
+                Log.d(LOG_TAG, "MmsApp.mBtMapAppReceiver: state=" + state
+                        + " device=" + (device != null ? device.getName() : "null")
+                        + " => sMapConnectedDevice="
+                        + (sMapConnectedDevice != null ? sMapConnectedDevice.getName() : "null"));
+            }
+            // The per-activity receiver in ComposeMessageActivity still handles
+            // real-time UI updates while the activity is visible.
+        }
+    };
 
     private SearchRecentSuggestions mRecentSuggestions;
     private TelephonyManager mTelephonyManager;
@@ -149,6 +200,11 @@ public class MmsApp extends Application {
 
         registerReceiver(mSimConfigChangeReceiver,
                 new IntentFilter(TelephonyManager.ACTION_MULTI_SIM_CONFIG_CHANGED));
+
+        // Track BT MAP connection state at application scope so ComposeMessageActivity
+        // can show the send button immediately on open without proxy binding delay.
+        registerReceiver(mBtMapAppReceiver,
+                new IntentFilter(BT_MAP_MESSAGING_STATE_CHANGED));
     }
 
     private void registSystemReceiver() {
@@ -238,6 +294,7 @@ public class MmsApp extends Application {
         unregisterReceiver(mSystemEventReceiver);
         unregisterReceiver(mSmsRejectedReceiver);
         unregisterReceiver(mSimConfigChangeReceiver);
+        unregisterReceiver(mBtMapAppReceiver);
     }
 
     @Override
