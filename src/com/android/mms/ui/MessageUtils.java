@@ -23,13 +23,16 @@ package com.android.mms.ui;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -116,6 +119,7 @@ import android.text.format.DateUtils;
 import android.text.format.Time;
 import android.text.style.URLSpan;
 import android.util.Log;
+import android.webkit.MimeTypeMap;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -202,6 +206,11 @@ public class MessageUtils {
     private static final int SELECT_SYSTEM = 0;
     private static final int SELECT_EXTERNAL = 1;
     private static final boolean DEBUG = false;
+    private static final String SHARE_CACHE_DIR = "share";
+    private static final int COPY_BUFFER_SIZE = 8000;
+    // Files still being read by a share target must survive, so only old copies are purged.
+    private static final long SHARE_CACHE_EXPIRE_MS = 60 * 60 * 1000;
+    private static final Object SHARE_CACHE_LOCK = new Object();
     public static final int SUB_INVALID = -1;  //  for single card product
     public static final int SUB1 = 0;  // for DSDS product of slot one
     public static final int SUB2 = 1;  // for DSDS product of slot two
@@ -1218,8 +1227,8 @@ public class MessageUtils {
                 intent.setData(Uri.parse(lookupUri));
             } else {
                 // we need open the saved part.
-                intent.setDataAndType(mm.getUri(), ContentType.TEXT_VCARD.toLowerCase());
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                viewImportVcard(context, mm.getUri());
+                return;
             }
             // distinguish view vcard from mms or contacts.
             intent.putExtra(VIEW_VCARD, true);
@@ -1242,7 +1251,7 @@ public class MessageUtils {
         context.startActivity(intent);
     }
 
-    private static void playMedia(Context context, MediaModel mediaMode) {
+    public static void playMedia(Context context, MediaModel mediaMode) {
         if((context == null) || (mediaMode == null))
             return;
         Intent intent = new Intent(context,
@@ -1252,6 +1261,10 @@ public class MessageUtils {
             type = WorkingMessage.IMAGE;
         } else if (mediaMode.isVideo()) {
             type = WorkingMessage.VIDEO;
+        } else if (mediaMode.isAudio()) {
+            type = WorkingMessage.AUDIO;
+            intent.putExtra(PlayVideoOrPicActivity.VIDEO_PIC_CONTENT_TYPE,
+                    mediaMode.getContentType());
         }
         intent.putExtra(PlayVideoOrPicActivity.VIDEO_PIC_TYPE,
                 type);
@@ -1259,6 +1272,146 @@ public class MessageUtils {
                 getUriFromFile(context, mediaMode).toString());
         context.startActivity(intent);
     }
+
+    // Other apps only see MmsProvider's restricted pdu view (inbox and sent messages), so parts
+    // of drafts, outbox and failed messages cannot be read by them.
+    public static boolean isHiddenFromThirdParty(Context context, Uri uri) {
+        if (uri == null || !ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())
+                || !"mms".equals(uri.getAuthority())) {
+            return false;
+        }
+        List<String> segments = uri.getPathSegments();
+        if (segments.size() != 2 || !"part".equals(segments.get(0))) {
+            return false;
+        }
+        ContentResolver resolver = context.getContentResolver();
+        try {
+            long msgId;
+            try (Cursor c = resolver.query(uri, new String[] { Part.MSG_ID },
+                    null, null, null)) {
+                if (c == null || !c.moveToFirst()) {
+                    return true;
+                }
+                msgId = c.getLong(0);
+            }
+            try (Cursor c = resolver.query(ContentUris.withAppendedId(Mms.CONTENT_URI, msgId),
+                    new String[] { Mms.MESSAGE_BOX }, null, null, null)) {
+                if (c == null || !c.moveToFirst()) {
+                    return true;
+                }
+                int box = c.getInt(0);
+                return box != Mms.MESSAGE_BOX_INBOX && box != Mms.MESSAGE_BOX_SENT;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error while checking message box of " + uri, e);
+            return true;
+        }
+    }
+
+    // Opens a vCard part in the app that can import it. Parts hidden from other apps are copied
+    // to the app cache first.
+    public static void viewImportVcard(final Context context, final Uri uri) {
+        new AsyncTask<Void, Void, Uri>() {
+            @Override
+            protected Uri doInBackground(Void... params) {
+                if (!isHiddenFromThirdParty(context, uri)) {
+                    return uri;
+                }
+                return copyToShareCache(context, uri, ContentType.TEXT_VCARD.toLowerCase());
+            }
+
+            @Override
+            protected void onPostExecute(Uri result) {
+                if (context instanceof Activity && ((Activity) context).isFinishing()) {
+                    return;
+                }
+                if (result == null) {
+                    Toast.makeText(context, R.string.mms_attachment_open_fail_title,
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                intent.setDataAndType(result, ContentType.TEXT_VCARD.toLowerCase());
+                intent.putExtra(VIEW_VCARD, true);
+                try {
+                    context.startActivity(intent);
+                } catch (ActivityNotFoundException e) {
+                    Log.e(TAG, "Can't open " + uri, e);
+                    Toast.makeText(context, R.string.mms_attachment_open_fail_title,
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        }.execute();
+    }
+
+    public static String createTimestampFileName(Context context, String contentType) {
+        String extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(contentType);
+        SimpleDateFormat dateFormat = new SimpleDateFormat(
+                context.getString(R.string.mms_new_file_name_format));
+        String name = dateFormat.format(new Date(System.currentTimeMillis()));
+        return TextUtils.isEmpty(extension) ? name : name + "." + extension;
+    }
+
+    // Purges stale copies and atomically creates an empty file with a name no other copy uses,
+    // so concurrent copies neither delete nor overwrite each other's files.
+    private static File reserveShareCacheFile(Context context, String contentType) {
+        synchronized (SHARE_CACHE_LOCK) {
+            File shareDir = new File(context.getCacheDir(), SHARE_CACHE_DIR);
+            File[] stale = shareDir.listFiles();
+            if (stale != null) {
+                long expireTime = System.currentTimeMillis() - SHARE_CACHE_EXPIRE_MS;
+                for (File f : stale) {
+                    if (f.lastModified() < expireTime) {
+                        f.delete();
+                    }
+                }
+            }
+            if (!shareDir.exists() && !shareDir.mkdirs()) {
+                Log.e(TAG, "Error creating " + shareDir.getAbsolutePath());
+                return null;
+            }
+            String name = createTimestampFileName(context, contentType);
+            File target = new File(shareDir, name);
+            try {
+                for (int suffix = 1; !target.createNewFile(); suffix++) {
+                    target = new File(shareDir, suffix + "_" + name);
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Error creating " + target.getAbsolutePath(), e);
+                return null;
+            }
+            return target;
+        }
+    }
+
+    // Copies the source into the app cache and returns a FileProvider uri other apps can read.
+    // Must be called from a background thread.
+    public static Uri copyToShareCache(Context context, Uri source, String contentType) {
+        File target = reserveShareCacheFile(context, contentType);
+        if (target == null) {
+            return null;
+        }
+        try (InputStream in = context.getContentResolver().openInputStream(source);
+                OutputStream out = new FileOutputStream(target)) {
+            if (in == null) {
+                target.delete();
+                return null;
+            }
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            int size;
+            while ((size = in.read(buffer)) != -1) {
+                out.write(buffer, 0, size);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error while copying " + source + " to share cache", e);
+            target.delete();
+            return null;
+        }
+        return FileProvider.getUriForFile(context,
+                context.getPackageName() + ".fileProvider", target);
+    }
+
     private static Uri getUriFromFile(Context context, MediaModel mm) {
         Uri uri = mm.getUri();
         if (uri != null && mm.isFileUri(uri)) {
