@@ -16,4 +16,5 @@
 <paths>
     <external-path path="Android/data/com.android.mms/" name="files_root" />
     <external-path path="." name="external_storage_root" />
+    <cache-path path="share/" name="share_cache" />
 </paths>

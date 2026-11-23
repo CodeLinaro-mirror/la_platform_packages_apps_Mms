@@ -40,13 +40,13 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
+import android.text.TextUtils;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.MimeTypeMap;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -63,8 +63,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.Locale;
 
 import android.util.Log;
@@ -74,6 +72,7 @@ public class PlayVideoOrPicActivity extends Activity {
 
     public static final String VIDEO_PIC_TYPE = "type";
     public static final String VIDEO_PIC_PATH = "path";
+    public static final String VIDEO_PIC_CONTENT_TYPE = "content_type";
 
     private static final String VIDEO_DURATION_INITIAL_STATUS = "00:00";
 
@@ -90,6 +89,7 @@ public class PlayVideoOrPicActivity extends Activity {
     private Runnable mUpdateThread = new UpdateThread();
     private int mType;
     private String mPath;
+    private String mContentType;
 
     private boolean mHasVideoPaused;
     private int mVideoPosition;
@@ -146,6 +146,7 @@ public class PlayVideoOrPicActivity extends Activity {
         Intent intent = getIntent();
         mType = intent.getIntExtra(VIDEO_PIC_TYPE, WorkingMessage.UNKNOWN_ERROR);
         mPath = intent.getStringExtra(VIDEO_PIC_PATH);
+        mContentType = intent.getStringExtra(VIDEO_PIC_CONTENT_TYPE);
         switch (mType) {
             case WorkingMessage.IMAGE:
                 mVideo.setVisibility(View.GONE);
@@ -157,33 +158,13 @@ public class PlayVideoOrPicActivity extends Activity {
                 break;
             case WorkingMessage.VIDEO:
                 mImage.setVisibility(View.GONE);
-                mVideoControllerLayout.setVisibility(View.VISIBLE);
-                mVideo.setVideoPath(mPath);
-                mVideo.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
-                    @Override
-                    public void onPrepared(MediaPlayer mp) {
-                        mVideoDuration.setText(MessageUtils.getDisplayTime(mVideo.getDuration()));
-                        playVideo();
-                    }
-                });
-                mVideo.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
-                    @Override
-                    public void onCompletion(MediaPlayer mp) {
-                        resetVideo();
-                    }
-                });
-                mVideo.setOnTouchListener(new View.OnTouchListener() {
-                    @Override
-                    public boolean onTouch(View v, MotionEvent event) {
-                        if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                            if (mVideo.isPlaying()) {
-                                showPauseButton();
-                            }
-                            return true;
-                        }
-                        return false;
-                    }
-                });
+                initMediaPlayback();
+                break;
+            case WorkingMessage.AUDIO:
+                // VideoView needs a visible surface to prepare, so keep it visible and cover it.
+                mImage.setScaleType(ImageView.ScaleType.CENTER);
+                mImage.setImageResource(R.drawable.ic_mms_music);
+                initMediaPlayback();
                 break;
             default:
                 finish();
@@ -194,10 +175,40 @@ public class PlayVideoOrPicActivity extends Activity {
                 .registerOnBackInvokedCallback(PRIORITY_OVERLAY, mOnBackInvokedCallback);
     }
 
+    private void initMediaPlayback() {
+        mVideoControllerLayout.setVisibility(View.VISIBLE);
+        mVideo.setVideoPath(mPath);
+        mVideo.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mp) {
+                mVideoDuration.setText(MessageUtils.getDisplayTime(mVideo.getDuration()));
+                playVideo();
+            }
+        });
+        mVideo.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mp) {
+                resetVideo();
+            }
+        });
+        mVideo.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    if (mVideo.isPlaying()) {
+                        showPauseButton();
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
-        if (mType == WorkingMessage.VIDEO && mHasVideoPaused) {
+        if (isPlayableMedia() && mHasVideoPaused) {
             mHasVideoPaused = false;
             mVideo.seekTo(mVideoPosition);
         }
@@ -207,6 +218,10 @@ public class PlayVideoOrPicActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(mOnBackInvokedCallback);
+    }
+
+    private boolean isPlayableMedia() {
+        return mType == WorkingMessage.VIDEO || mType == WorkingMessage.AUDIO;
     }
 
     private void setImmersiveMode(boolean enable) {
@@ -286,7 +301,7 @@ public class PlayVideoOrPicActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        if (mType == WorkingMessage.VIDEO && mVideo.isPlaying()) {
+        if (isPlayableMedia() && mVideo.isPlaying()) {
             pauseVideo();
         }
     }
@@ -320,20 +335,70 @@ public class PlayVideoOrPicActivity extends Activity {
                 new SaveAttachmentTask().execute(Uri.parse(mPath));
                 break;
             case R.id.video_pic_menu_share:
-                Intent intent = new Intent(Intent.ACTION_SEND);
-                if (mType == WorkingMessage.VIDEO) {
-                    intent.setType("video/*");
-                } else {
-                    intent.setType("image/*");
-                }
-                intent.putExtra(Intent.EXTRA_STREAM, Uri.parse(mPath));
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(intent);
+                new ShareTask().execute(Uri.parse(mPath));
                 break;
             default:
                 break;
         }
         return true;
+    }
+
+    private void startShare(Uri uri, String contentType) {
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        if (!TextUtils.isEmpty(contentType)) {
+            intent.setType(contentType);
+        } else if (mType == WorkingMessage.VIDEO) {
+            intent.setType("video/*");
+        } else if (mType == WorkingMessage.AUDIO) {
+            intent.setType("audio/*");
+        } else {
+            intent.setType("image/*");
+        }
+        intent.putExtra(Intent.EXTRA_STREAM, uri);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(intent);
+    }
+
+    private static class ShareTarget {
+        final Uri uri;
+        final String contentType;
+
+        ShareTarget(Uri uri, String contentType) {
+            this.uri = uri;
+            this.contentType = contentType;
+        }
+    }
+
+    private class ShareTask extends AsyncTask<Uri, Void, ShareTarget> {
+
+        @Override
+        protected ShareTarget doInBackground(Uri... params) {
+            Uri source = params[0];
+            if (!MessageUtils.isHiddenFromThirdParty(PlayVideoOrPicActivity.this, source)) {
+                return new ShareTarget(source, mContentType);
+            }
+
+            String contentType = mContentType;
+            if (TextUtils.isEmpty(contentType)) {
+                contentType = getContentResolver().getType(source);
+            }
+            Uri copy = MessageUtils.copyToShareCache(PlayVideoOrPicActivity.this, source,
+                    contentType);
+            return copy == null ? null : new ShareTarget(copy, contentType);
+        }
+
+        @Override
+        protected void onPostExecute(ShareTarget result) {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            if (result != null) {
+                startShare(result.uri, result.contentType);
+            } else {
+                Toast.makeText(getApplicationContext(),
+                        R.string.mms_attachment_share_fail_title, Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private class SaveAttachmentTask extends AsyncTask<Uri,Void,Uri> {
@@ -342,10 +407,13 @@ public class PlayVideoOrPicActivity extends Activity {
         protected Uri doInBackground(Uri... params) {
             Uri uri = params[0];
             final File appDir = new File(Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_PICTURES),
+                    mType == WorkingMessage.AUDIO ? Environment.DIRECTORY_MUSIC
+                            : Environment.DIRECTORY_PICTURES),
                     getResources().getString(R.string.app_label));
-            String contentType = new UriImage(PlayVideoOrPicActivity.this, uri)
-                    .getContentType();
+            String contentType = mContentType;
+            if (TextUtils.isEmpty(contentType)) {
+                contentType = new UriImage(PlayVideoOrPicActivity.this, uri).getContentType();
+            }
             return saveContent(uri, appDir, contentType);
         }
 
@@ -356,6 +424,9 @@ public class PlayVideoOrPicActivity extends Activity {
             if (result != null) {
                 if (mType == WorkingMessage.VIDEO) {
                     message = getResources().getString(R.string.mms_video_attachment_saved_title,
+                            getResources().getString(R.string.app_label));
+                } else if (mType == WorkingMessage.AUDIO) {
+                    message = getResources().getString(R.string.mms_audio_attachment_saved_title,
                             getResources().getString(R.string.app_label));
                 } else {
                     message = getResources().getString(R.string.mms_photo_attachment_saved_title,
@@ -395,13 +466,7 @@ public class PlayVideoOrPicActivity extends Activity {
 
     private synchronized File createNewFile(
             File directory, String contentType) throws IOException {
-        MimeTypeMap mimeTypeMap = MimeTypeMap.getSingleton();
-        String fileExtension = mimeTypeMap.getExtensionFromMimeType(contentType);
-        String fileNameFormat = getResources().getString(R.string.mms_new_file_name_format);
-        final Date date = new Date(System.currentTimeMillis());
-        final SimpleDateFormat dateFormat = new SimpleDateFormat(fileNameFormat);
-        final String fileName = dateFormat.format(date) + "." + fileExtension;
-        File f = new File(directory, fileName);
+        File f = new File(directory, MessageUtils.createTimestampFileName(this, contentType));
         try {
             if (!f.exists()) {
                 f.createNewFile();

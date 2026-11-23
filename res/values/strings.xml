@@ -1165,7 +1165,10 @@
     <string name="mms_new_file_name_format" translatable="false">"yyyyMMdd_HHmmss"</string>
     <string name="mms_photo_attachment_saved_title">Photo saved to \"<xliff:g id="albumName">%s</xliff:g>\" album</string>
     <string name="mms_video_attachment_saved_title">Video saved to \"<xliff:g id="albumName">%s</xliff:g>\" album</string>
+    <string name="mms_audio_attachment_saved_title">Audio saved to \"<xliff:g id="folderName">%s</xliff:g>\" folder</string>
     <string name="mms_attachment_saved_fail_title">Save failed</string>
+    <string name="mms_attachment_share_fail_title">Share failed</string>
+    <string name="mms_attachment_open_fail_title">Can\'t open attachment</string>
     <string name="notification_mark_as_read">Mark as read</string>
     <string name="notification_download">Download</string>
     <string name="notification_reply">Reply</string>

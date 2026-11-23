@@ -722,11 +722,8 @@ public class ComposeMessageActivity extends Activity
                     SlideshowModel slideshowModel = mWorkingMessage.getSlideshow();
                     if (requestCode == AttachmentEditor.MSG_PLAY_AUDIO &&
                             (slideshowModel != null) && slideshowModel.isSimpleAudio()) {
-                        MediaModel mm = slideshowModel.get(0).getAudio();
-                        Intent intent = new Intent(Intent.ACTION_VIEW);
-                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        intent.setDataAndType(mm.getUri(), mm.getContentType());
-                        startActivityForResult(intent, requestCode);
+                        MessageUtils.playMedia(ComposeMessageActivity.this,
+                                slideshowModel.get(0).getAudio());
                         return;
                      }
 
